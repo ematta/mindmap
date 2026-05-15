@@ -12,6 +12,26 @@
             <button id="connectBtn" class="mode-btn">Connect</button>
             <span id="connectHint" class="hint"></span>
         </div>
+        <div id="contextMenu" class="context-menu">
+            <div class="context-menu-item" data-action="connect">
+                <span class="context-menu-icon">&#x21AA;</span> Connect To...
+            </div>
+            <div class="context-menu-item has-submenu" data-action="color">
+                <span class="context-menu-icon">&#x25CF;</span> Change Color
+                <div class="context-submenu">
+                    <div class="context-color-option" data-color="0" style="background:#fff9b1;border:2px solid #e6d935"></div>
+                    <div class="context-color-option" data-color="1" style="background:#ffcccb;border:2px solid #e67373"></div>
+                    <div class="context-color-option" data-color="2" style="background:#b3e6b3;border:2px solid #5cb85c"></div>
+                    <div class="context-color-option" data-color="3" style="background:#b3d9ff;border:2px solid #5ba3e6"></div>
+                    <div class="context-color-option" data-color="4" style="background:#e6ccff;border:2px solid #a366d9"></div>
+                    <div class="context-color-option" data-color="5" style="background:#ffe0b3;border:2px solid #e6a34d"></div>
+                </div>
+            </div>
+            <div class="context-menu-separator"></div>
+            <div class="context-menu-item danger" data-action="delete">
+                <span class="context-menu-icon">&#x2715;</span> Delete Idea
+            </div>
+        </div>
         <canvas id="canvas"></canvas>
         <script src="app.js"></script>
     </body>

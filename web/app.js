@@ -41,6 +41,10 @@
         sourceId: null
     };
 
+    var contextMenuState = {
+        noteIdx: -1
+    };
+
     function openDB() {
         return new Promise(function (resolve, reject) {
             var req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -483,6 +487,31 @@
         showInput(notes.length - 1);
     }
 
+    function hideContextMenu() {
+        var menu = document.getElementById("contextMenu");
+        menu.classList.remove("visible");
+        contextMenuState.noteIdx = -1;
+    }
+
+    function showContextMenu(e, noteIdx) {
+        e.preventDefault();
+        var menu = document.getElementById("contextMenu");
+        contextMenuState.noteIdx = noteIdx;
+        menu.style.left = e.clientX + "px";
+        menu.style.top = e.clientY + "px";
+        menu.classList.add("visible");
+
+        requestAnimationFrame(function () {
+            var rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                menu.style.left = (e.clientX - rect.width) + "px";
+            }
+            if (rect.bottom > window.innerHeight) {
+                menu.style.top = (e.clientY - rect.height) + "px";
+            }
+        });
+    }
+
     function init() {
         canvas = document.getElementById("canvas");
         ctx = canvas.getContext("2d");
@@ -598,6 +627,63 @@
                 drag.active = false;
                 canvas.style.cursor = "default";
             }
+        });
+
+        canvas.addEventListener("contextmenu", function (e) {
+            var pos = getMousePos(e);
+            var idx = hitTest(pos.x, pos.y);
+            if (idx >= 0) {
+                showContextMenu(e, idx);
+            } else {
+                hideContextMenu();
+            }
+        });
+
+        document.addEventListener("click", function (e) {
+            var menu = document.getElementById("contextMenu");
+            if (!menu.contains(e.target)) {
+                hideContextMenu();
+            }
+        });
+
+        document.getElementById("contextMenu").addEventListener("click", function (e) {
+            var target = e.target;
+
+            var colorOpt = target.closest(".context-color-option");
+            if (colorOpt) {
+                var colorIdx = parseInt(colorOpt.getAttribute("data-color"), 10);
+                if (contextMenuState.noteIdx >= 0 && notes[contextMenuState.noteIdx]) {
+                    notes[contextMenuState.noteIdx].color = NOTE_COLORS[colorIdx];
+                    saveNote(notes[contextMenuState.noteIdx]);
+                    render();
+                }
+                hideContextMenu();
+                return;
+            }
+
+            var item = target.closest(".context-menu-item");
+            if (!item) return;
+            var action = item.getAttribute("data-action");
+
+            if (action === "connect" && contextMenuState.noteIdx >= 0) {
+                if (!connectState.active) {
+                    toggleConnectMode();
+                }
+                connectState.sourceId = notes[contextMenuState.noteIdx].id;
+                setConnectHint("Now click a target idea...");
+                render();
+            }
+
+            if (action === "delete" && contextMenuState.noteIdx >= 0) {
+                var delIdx = contextMenuState.noteIdx;
+                var deletedId = notes[delIdx].id;
+                deleteConnectionsForNote(deletedId);
+                notes.splice(delIdx, 1);
+                deleteNote(deletedId);
+                render();
+            }
+
+            hideContextMenu();
         });
 
         openDB().then(function () {
