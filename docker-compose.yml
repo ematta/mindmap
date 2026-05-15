@@ -1,32 +1,11 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "${PORT:-8080}:8080"
+      - "8080:80"
     environment:
-      PORT: "8080"
-      DATABASE_URL: postgres://mindmap:mindmap@postgres:5432/mindmap?sslmode=disable
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - NGINX_HOST=foobar.com
+      - NGINX_PORT=80
     restart: unless-stopped
-
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_USER: mindmap
-      POSTGRES_PASSWORD: mindmap
-      POSTGRES_DB: mindmap
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "${PGPORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U mindmap"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-
-volumes:
-  pgdata:

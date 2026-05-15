@@ -1,16 +1,18 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MindMap</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <div id="app">
-        <h1>Hello World</h1>
-        <p>Welcome to MindMap SPA</p>
-    </div>
-    <script src="/static/app.js"></script>
-</body>
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>MindMap</title>
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <div id="toolbar">
+            <button id="addNoteBtn">+ Add Idea</button>
+            <button id="connectBtn" class="mode-btn">Connect</button>
+            <span id="connectHint" class="hint"></span>
+        </div>
+        <canvas id="canvas"></canvas>
+        <script src="app.js"></script>
+    </body>
 </html>
