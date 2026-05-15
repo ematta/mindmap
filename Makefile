@@ -1,4 +1,4 @@
-.PHONY: all build test run clean fmt
+.PHONY: all build test run clean fmt docker-up docker-down
 
 BINARY := mindmap
 PORT := 8080
@@ -19,3 +19,9 @@ clean:
 
 fmt:
 	gofmt -l -s -w .
+
+docker-up:
+	docker compose up --build -d
+
+docker-down:
+	docker compose down

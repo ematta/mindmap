@@ -20,6 +20,15 @@
 
 ## Commands
 
-- **Run**: `go run main.go` (starts on `:8080`, override with `PORT` env var)
-- **Test**: `go test ./pkg/web/ -v`
-- **Build**: `go build .`
+- **Run**: `make run` or `go run main.go` (starts on `:8080`, override with `PORT` env var)
+- **Test**: `make test` or `go test ./pkg/web/ -v`
+- **Build**: `make build` or `go build .`
+- **Docker up**: `make docker-up` (app + postgres via compose)
+- **Docker down**: `make docker-down`
+
+## Docker
+
+- `Dockerfile` — Multi-stage build (golang:1.26-alpine → alpine:3.21)
+- `docker-compose.yml` — App + PostgreSQL 17 sidecar
+- Postgres credentials: user=`mindmap`, password=`mindmap`, db=`mindmap`
+- `DATABASE_URL` is injected into the app container automatically

@@ -1,0 +1,17 @@
+# dependencies
+/vendor/
+
+# build output
+/mindmap
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# docker
+pgdata/

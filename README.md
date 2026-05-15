@@ -105,8 +105,17 @@ Set the `PORT` environment variable to override.
 ## Running Tests
 
 ```bash
-go test ./pkg/web/ -v
+make test
 ```
+
+## Docker
+
+```bash
+make docker-up    # start app + postgres
+make docker-down  # stop
+```
+
+Postgres is available at `localhost:5432` (user/password/db: `mindmap`).
 
 ## Dependencies
 
