@@ -2,9 +2,10 @@
     "use strict";
 
     var DB_NAME = "mindmapdb";
-    var DB_VERSION = 3;
+    var DB_VERSION = 4;
     var NOTES_STORE = "notes";
     var CONNS_STORE = "connections";
+    var VIEWPORT_STORE = "viewport";
     var TOOLBAR_HEIGHT = 48;
     var NOTE_WIDTH = 220;
     var NOTE_HEIGHT = 180;
@@ -73,6 +74,14 @@
     var zoomLevel = 1.0;
     var panX = 0;
     var panY = 0;
+
+    var pan = {
+        active: false,
+        startX: 0,
+        startY: 0,
+        startPanX: 0,
+        startPanY: 0
+    };
 
     var THEME_KEY = "mindmap-theme";
     var themePreference = "system";
@@ -161,6 +170,9 @@
                 if (!database.objectStoreNames.contains(CONNS_STORE)) {
                     database.createObjectStore(CONNS_STORE, { keyPath: "id" });
                 }
+                if (!database.objectStoreNames.contains(VIEWPORT_STORE)) {
+                    database.createObjectStore(VIEWPORT_STORE, { keyPath: "id" });
+                }
                 if (oldVersion < 3) {
                     var tx = e.target.transaction;
                     if (tx.objectStoreNames.contains(NOTES_STORE)) {
@@ -243,6 +255,23 @@
         });
         connections = connections.filter(function (c) {
             return c.from !== noteId && c.to !== noteId;
+        });
+    }
+
+    function saveViewport() {
+        if (!db) return;
+        dbPut(VIEWPORT_STORE, { id: "current", panX: panX, panY: panY, zoomLevel: zoomLevel }).catch(function (err) { console.error("Save viewport failed:", err); });
+    }
+
+    function loadViewport() {
+        if (!db) return Promise.resolve();
+        return dbGetAll(VIEWPORT_STORE).then(function (results) {
+            if (results.length > 0) {
+                var vp = results[0];
+                panX = vp.panX || 0;
+                panY = vp.panY || 0;
+                zoomLevel = vp.zoomLevel || 1.0;
+            }
         });
     }
 
@@ -522,6 +551,7 @@
         panX = cx - (cx - panX) * (newZoom / oldZoom);
         panY = cy - (cy - panY) * (newZoom / oldZoom);
         zoomLevel = newZoom;
+        saveViewport();
         render();
     }
 
@@ -541,6 +571,14 @@
         zoomLevel = 1.0;
         panX = 0;
         panY = 0;
+        saveViewport();
+        render();
+    }
+
+    function panBy(dx, dy) {
+        panX += dx;
+        panY += dy;
+        saveViewport();
         render();
     }
 
@@ -897,7 +935,7 @@
             return;
         }
 
-        var data = { notes: notes, connections: connections };
+        var data = { notes: notes, connections: connections, viewport: { panX: panX, panY: panY, zoomLevel: zoomLevel } };
         var encoded = encodeState(data);
 
         if (encoded.length > 65000) {
@@ -942,6 +980,13 @@
             });
             connections = data.connections;
 
+            if (data.viewport) {
+                panX = data.viewport.panX || 0;
+                panY = data.viewport.panY || 0;
+                zoomLevel = data.viewport.zoomLevel || 1.0;
+                saveViewport();
+            }
+
             COLOR_CYCLE = 0;
             for (var i = 0; i < notes.length; i++) {
                 var ci = NOTE_COLORS.findIndex(function (c) {
@@ -971,7 +1016,8 @@
     function exportState() {
         var data = {
             notes: notes,
-            connections: connections
+            connections: connections,
+            viewport: { panX: panX, panY: panY, zoomLevel: zoomLevel }
         };
         var json = JSON.stringify(data, null, 2);
         var blob = new Blob([json], { type: "application/json" });
@@ -1005,6 +1051,12 @@
                         return n;
                     });
                     connections = data.connections;
+                    if (data.viewport) {
+                        panX = data.viewport.panX || 0;
+                        panY = data.viewport.panY || 0;
+                        zoomLevel = data.viewport.zoomLevel || 1.0;
+                        saveViewport();
+                    }
                     COLOR_CYCLE = 0;
                     for (var i = 0; i < notes.length; i++) {
                         var ci = NOTE_COLORS.findIndex(function (c) {
@@ -1096,6 +1148,12 @@
         document.getElementById("zoomOutBtn").addEventListener("click", zoomOut);
         document.getElementById("resetZoomBtn").addEventListener("click", resetZoom);
 
+        var PAN_STEP = 100;
+        document.getElementById("panLeftBtn").addEventListener("click", function () { panBy(-PAN_STEP, 0); });
+        document.getElementById("panUpBtn").addEventListener("click", function () { panBy(0, -PAN_STEP); });
+        document.getElementById("panDownBtn").addEventListener("click", function () { panBy(0, PAN_STEP); });
+        document.getElementById("panRightBtn").addEventListener("click", function () { panBy(PAN_STEP, 0); });
+
         canvas.addEventListener("wheel", function (e) {
             e.preventDefault();
             var rect = canvas.getBoundingClientRect();
@@ -1155,7 +1213,15 @@
                 return;
             }
 
-            if (idx === -1) return;
+            if (idx === -1) {
+                pan.active = true;
+                pan.startX = e.clientX;
+                pan.startY = e.clientY;
+                pan.startPanX = panX;
+                pan.startPanY = panY;
+                canvas.style.cursor = "grabbing";
+                return;
+            }
 
             if (isResizeHandle(pos.x, pos.y, notes[idx])) {
                 e.preventDefault();
@@ -1202,7 +1268,11 @@
 
         canvas.addEventListener("mousemove", function (e) {
             var pos = getMousePos(e);
-            if (resize.active && notes[resize.noteIdx]) {
+            if (pan.active) {
+                panX = pan.startPanX + (e.clientX - pan.startX);
+                panY = pan.startPanY + (e.clientY - pan.startY);
+                render();
+            } else if (resize.active && notes[resize.noteIdx]) {
                 var note = notes[resize.noteIdx];
                 var newW = resize.startW + (pos.x - resize.startX);
                 var newH = resize.startH + (pos.y - resize.startY);
@@ -1224,13 +1294,17 @@
                 } else if (hitTestConnection(pos.x, pos.y) >= 0) {
                     canvas.style.cursor = "pointer";
                 } else {
-                    canvas.style.cursor = "default";
+                    canvas.style.cursor = "grab";
                 }
             }
         });
 
         canvas.addEventListener("mouseup", function () {
-            if (resize.active) {
+            if (pan.active) {
+                pan.active = false;
+                canvas.style.cursor = "grab";
+                saveViewport();
+            } else if (resize.active) {
                 saveNote(notes[resize.noteIdx]);
                 resize.active = false;
                 canvas.style.cursor = "default";
@@ -1253,7 +1327,11 @@
         });
 
         canvas.addEventListener("mouseleave", function () {
-            if (resize.active) {
+            if (pan.active) {
+                pan.active = false;
+                canvas.style.cursor = "default";
+                saveViewport();
+            } else if (resize.active) {
                 saveNote(notes[resize.noteIdx]);
                 resize.active = false;
                 canvas.style.cursor = "default";
@@ -1388,7 +1466,7 @@
         });
 
         openDB().then(function () {
-            return Promise.all([dbGetAll(NOTES_STORE), dbGetAll(CONNS_STORE)]);
+            return Promise.all([dbGetAll(NOTES_STORE), dbGetAll(CONNS_STORE), loadViewport()]);
         }).then(function (results) {
             notes = results[0].map(function (n) {
                 if (!n.w) n.w = NOTE_WIDTH;

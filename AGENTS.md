@@ -8,7 +8,8 @@
 
 - **Resizable cards**: Drag the bottom-right corner handle to resize notes. Minimum size is 120x80px. Sizes persist in IndexedDB and are included in JSON export/import.
 - **Deletable connections**: Right-click on a connection line to delete it. Connections show a pointer cursor on hover.
-- **Share via link**: Right-click canvas → "Share Link" encodes the board state as base64 in the URL hash and copies the link to clipboard. Anyone opening the link gets the board loaded automatically. Works entirely client-side with no backend. Boards with existing data are prompted before replacing.
+- **Share via link**: Right-click canvas → "Share Link" encodes the board state (notes, connections, and viewport position/zoom) as base64 in the URL hash and copies the link to clipboard. Anyone opening the link gets the board loaded automatically with the same view. Works entirely client-side with no backend. Boards with existing data are prompted before replacing.
+- **Pannable canvas**: Left-click and drag on empty canvas to pan around. Shows a grab/grabbing hand cursor. Pan position and zoom level persist in IndexedDB (via `viewport` object store) and are included in JSON export/import and shared links.
 
 ## Development Conventions
 
