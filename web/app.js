@@ -59,6 +59,81 @@
     var panX = 0;
     var panY = 0;
 
+    var THEME_KEY = "mindmap-theme";
+    var themePreference = "system";
+    var isDarkMode = false;
+
+    var THEME_COLORS = {
+        light: {
+            background: "#e8e8e8",
+            gridDot: "#c8c8c8",
+            arrowStroke: "#555",
+            arrowFill: "#555",
+            noteText: "#333",
+            notePlaceholder: "#999",
+            editBorder: "#2c3e50",
+            connectBorder: "#e74c3c"
+        },
+        dark: {
+            background: "#1a1a2e",
+            gridDot: "#333355",
+            arrowStroke: "#aaa",
+            arrowFill: "#aaa",
+            noteText: "#333",
+            notePlaceholder: "#999",
+            editBorder: "#6c8ebf",
+            connectBorder: "#e74c3c"
+        }
+    };
+
+    function getSystemDarkMode() {
+        return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+
+    function applyTheme() {
+        if (themePreference === "system") {
+            isDarkMode = getSystemDarkMode();
+        } else {
+            isDarkMode = themePreference === "dark";
+        }
+        document.documentElement.setAttribute("data-theme", isDarkMode ? "dark" : "light");
+        updateThemeOptionActive();
+        if (ctx) render();
+    }
+
+    function setTheme(preference) {
+        themePreference = preference;
+        try {
+            localStorage.setItem(THEME_KEY, preference);
+        } catch (e) { /* ignore */ }
+        applyTheme();
+    }
+
+    function loadTheme() {
+        try {
+            var saved = localStorage.getItem(THEME_KEY);
+            if (saved === "system" || saved === "light" || saved === "dark") {
+                themePreference = saved;
+            }
+        } catch (e) { /* ignore */ }
+    }
+
+    function getThemeColors() {
+        return isDarkMode ? THEME_COLORS.dark : THEME_COLORS.light;
+    }
+
+    function updateThemeOptionActive() {
+        var options = document.querySelectorAll(".context-theme-option");
+        for (var i = 0; i < options.length; i++) {
+            var opt = options[i];
+            if (opt.getAttribute("data-theme") === themePreference) {
+                opt.classList.add("active");
+            } else {
+                opt.classList.remove("active");
+            }
+        }
+    }
+
     function openDB() {
         return new Promise(function (resolve, reject) {
             var req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -209,8 +284,10 @@
 
         ctx.save();
 
-        ctx.strokeStyle = "#555";
-        ctx.fillStyle = "#555";
+        var colors = getThemeColors();
+
+        ctx.strokeStyle = colors.arrowStroke;
+        ctx.fillStyle = colors.arrowFill;
         ctx.lineWidth = 2;
         ctx.lineJoin = "round";
 
@@ -241,7 +318,8 @@
         var startY = Math.floor(worldTop / spacing) * spacing;
         var endX = Math.ceil(worldRight / spacing) * spacing;
         var endY = Math.ceil(worldBottom / spacing) * spacing;
-        ctx.fillStyle = "#c8c8c8";
+        var colors = getThemeColors();
+        ctx.fillStyle = colors.gridDot;
         for (var gx = startX; gx <= endX; gx += spacing) {
             for (var gy = startY; gy <= endY; gy += spacing) {
                 ctx.beginPath();
@@ -273,6 +351,7 @@
         var y = note.y;
         var w = note.w;
         var h = note.h;
+        var colors = getThemeColors();
 
         ctx.save();
 
@@ -303,7 +382,7 @@
         ctx.shadowColor = "transparent";
 
         if (connectState.active && connectState.sourceId === note.id) {
-            ctx.strokeStyle = "#e74c3c";
+            ctx.strokeStyle = colors.connectBorder;
             ctx.lineWidth = 3;
             ctx.setLineDash([6, 3]);
             ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
@@ -336,7 +415,7 @@
 
         if (!(editState.active && editState.noteIdx === idx)) {
             var text = note.text || "Click to edit...";
-            if (!note.text) ctx.fillStyle = "#999";
+            ctx.fillStyle = note.text ? colors.noteText : colors.notePlaceholder;
             var maxW = w - 24;
             var lines = wrapText(text, maxW);
             var lineH = 20;
@@ -346,13 +425,13 @@
                 ctx.fillText(lines[li], x + 12, ty + li * lineH);
             }
             if (lines.length > maxLines) {
-                ctx.fillStyle = "#999";
+                ctx.fillStyle = colors.notePlaceholder;
                 ctx.fillText("...", x + 12, ty + maxLines * lineH);
             }
         }
 
         if (editState.active && editState.noteIdx === idx) {
-            ctx.strokeStyle = "#2c3e50";
+            ctx.strokeStyle = colors.editBorder;
             ctx.lineWidth = 2.5;
             ctx.setLineDash([5, 3]);
             ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
@@ -365,7 +444,11 @@
     function render() {
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var colors = getThemeColors();
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+        ctx.fillStyle = colors.background;
+        ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
         ctx.translate(panX, panY);
         ctx.scale(zoomLevel, zoomLevel);
@@ -483,10 +566,10 @@
         input.style.height = ((note.h - 48) * zoomLevel) + "px";
         input.style.border = "none";
         input.style.outline = "none";
-        input.style.background = "rgba(255,255,255,0.6)";
+        input.style.background = isDarkMode ? "rgba(40,40,60,0.8)" : "rgba(255,255,255,0.6)";
         input.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
         input.style.fontSize = (14 * zoomLevel) + "px";
-        input.style.color = "#333";
+        input.style.color = isDarkMode ? "#ddd" : "#333";
         input.style.resize = "none";
         input.style.padding = (4 * zoomLevel) + "px";
         input.style.zIndex = "20";
@@ -546,10 +629,10 @@
         input.style.height = (20 * zoomLevel) + "px";
         input.style.border = "none";
         input.style.outline = "none";
-        input.style.background = "rgba(255,255,255,0.6)";
+        input.style.background = isDarkMode ? "rgba(40,40,60,0.8)" : "rgba(255,255,255,0.6)";
         input.style.fontFamily = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
         input.style.fontSize = (11 * zoomLevel) + "px";
-        input.style.color = "#333";
+        input.style.color = isDarkMode ? "#ddd" : "#333";
         input.style.padding = (2 * zoomLevel) + "px " + (2 * zoomLevel) + "px";
         input.style.zIndex = "20";
         input.style.borderRadius = (3 * zoomLevel) + "px";
@@ -756,9 +839,19 @@
     }
 
     function init() {
+        loadTheme();
+
         canvas = document.getElementById("canvas");
         ctx = canvas.getContext("2d");
         resizeCanvas();
+
+        applyTheme();
+
+        window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+            if (themePreference === "system") {
+                applyTheme();
+            }
+        });
 
         window.addEventListener("resize", resizeCanvas);
 
@@ -923,6 +1016,12 @@
         document.getElementById("contextMenu").addEventListener("click", function (e) {
             var target = e.target;
 
+            var themeOpt = target.closest(".context-theme-option");
+            if (themeOpt) {
+                setTheme(themeOpt.getAttribute("data-theme"));
+                return;
+            }
+
             var colorOpt = target.closest(".context-color-option");
             if (colorOpt) {
                 var colorIdx = parseInt(colorOpt.getAttribute("data-color"), 10);
@@ -965,6 +1064,14 @@
         });
 
         document.getElementById("canvasMenu").addEventListener("click", function (e) {
+            var target = e.target;
+
+            var themeOpt = target.closest(".context-theme-option");
+            if (themeOpt) {
+                setTheme(themeOpt.getAttribute("data-theme"));
+                return;
+            }
+
             var item = e.target.closest(".context-menu-item");
             if (!item) return;
             var action = item.getAttribute("data-action");

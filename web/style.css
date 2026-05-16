@@ -191,6 +191,75 @@ body {
     transform: scale(1.2);
 }
 
+.context-theme-submenu {
+    grid-template-columns: 1fr;
+    min-width: 140px;
+}
+
+.context-theme-option {
+    padding: 8px 14px;
+    cursor: pointer;
+    border-radius: 6px;
+    white-space: nowrap;
+    font-size: 13px;
+    color: #333;
+}
+
+.context-theme-option:hover {
+    background: #f0f0f0;
+}
+
+.context-theme-option.active {
+    background: #e8f4fd;
+    font-weight: 600;
+}
+
+[data-theme="dark"] .context-menu {
+    background: #2a2a3a;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3);
+}
+
+[data-theme="dark"] .context-menu-item {
+    color: #ddd;
+}
+
+[data-theme="dark"] .context-menu-item:hover {
+    background: #3a3a4a;
+}
+
+[data-theme="dark"] .context-menu-item.danger {
+    color: #e74c3c;
+}
+
+[data-theme="dark"] .context-menu-item.danger:hover {
+    background: #3a2020;
+}
+
+[data-theme="dark"] .context-menu-separator {
+    background: #444;
+}
+
+[data-theme="dark"] .context-submenu {
+    background: #2a2a3a;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3);
+}
+
+[data-theme="dark"] .context-theme-option {
+    color: #ddd;
+}
+
+[data-theme="dark"] .context-theme-option:hover {
+    background: #3a3a4a;
+}
+
+[data-theme="dark"] .context-theme-option.active {
+    background: #1a3a5a;
+}
+
+[data-theme="dark"] body {
+    background: #1a1a2e;
+}
+
 #canvas {
     display: block;
     width: 100vw;
