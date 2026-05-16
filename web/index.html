@@ -8,12 +8,13 @@
     </head>
     <body>
         <div id="toolbar">
-            <button id="boardsBtn" class="toolbar-section-btn">&#9776; Boards</button>
-            <span id="currentBoardName" class="board-name-display">My Board</span>
-            <span class="toolbar-separator"></span>
-            <button id="addNoteBtn">+ Add Idea</button>
-            <button id="connectBtn" class="mode-btn">Connect</button>
-            <span id="connectHint" class="hint"></span>
+            <div class="toolbar-left">
+                <button id="boardsBtn" class="toolbar-section-btn">&#9776; Boards</button>
+                <span id="currentBoardName" class="board-name-display">My Board</span>
+                <span class="toolbar-separator"></span>
+                <button id="addNoteBtn">+ Add Idea</button>
+            </div>
+            <span class="app-title">MindMap</span>
             <span id="zoomControls" class="zoom-controls">
                 <button id="panLeftBtn" class="zoom-btn" title="Pan Left">&#x25C0;</button>
                 <button id="panUpBtn" class="zoom-btn" title="Pan Up">&#x25B2;</button>
@@ -94,6 +95,17 @@
             <div class="context-menu-separator"></div>
             <div class="context-menu-item" data-action="share">
                 <span class="context-menu-icon">&#x2197;</span> Share Link
+            </div>
+        </div>
+        <div id="aboutModalBackdrop" class="about-modal-backdrop"></div>
+        <div id="aboutModal" class="about-modal">
+            <div class="about-modal-header">
+                <h2>About MindMap</h2>
+                <button id="closeAboutModalBtn" class="close-btn">&times;</button>
+            </div>
+            <div class="about-modal-body">
+                <p>MindMap is a lightweight, client-side brainstorming tool. Create boards, add ideas as draggable cards, and connect them to visualize your thoughts.</p>
+                <p>Everything runs locally in your browser. No data is sent to or stored on any server — your boards, notes, and connections are saved only in your browser's local storage.</p>
             </div>
         </div>
         <input type="file" id="importInput" accept=".json" style="display:none" />

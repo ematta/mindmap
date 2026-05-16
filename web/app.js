@@ -274,8 +274,9 @@
                             if (cursor) {
                                 var vp = cursor.value;
                                 if (vp.id === "current") {
+                                    cursor.delete();
                                     vp.id = "default";
-                                    cursor.update(vp);
+                                    vs.put(vp);
                                 }
                                 cursor.continue();
                             }
@@ -859,21 +860,9 @@
         render();
     }
 
-    function setConnectHint(text) {
-        document.getElementById("connectHint").textContent = text;
-    }
-
     function toggleConnectMode() {
         connectState.active = !connectState.active;
         connectState.sourceId = null;
-        var btn = document.getElementById("connectBtn");
-        if (connectState.active) {
-            btn.classList.add("active");
-            setConnectHint("Click a source idea...");
-        } else {
-            btn.classList.remove("active");
-            setConnectHint("");
-        }
         render();
     }
 
@@ -1395,6 +1384,16 @@
         document.getElementById("boardPanelBackdrop").classList.remove("visible");
     }
 
+    function openAboutModal() {
+        document.getElementById("aboutModal").classList.add("visible");
+        document.getElementById("aboutModalBackdrop").classList.add("visible");
+    }
+
+    function closeAboutModal() {
+        document.getElementById("aboutModal").classList.remove("visible");
+        document.getElementById("aboutModalBackdrop").classList.remove("visible");
+    }
+
     function updateBoardNameDisplay() {
         var el = document.getElementById("currentBoardName");
         if (!el) return;
@@ -1575,7 +1574,9 @@
         });
 
         document.getElementById("addNoteBtn").addEventListener("click", addNote);
-        document.getElementById("connectBtn").addEventListener("click", toggleConnectMode);
+        document.querySelector(".app-title").addEventListener("click", openAboutModal);
+        document.getElementById("closeAboutModalBtn").addEventListener("click", closeAboutModal);
+        document.getElementById("aboutModalBackdrop").addEventListener("click", closeAboutModal);
 
         document.getElementById("zoomInBtn").addEventListener("click", zoomIn);
         document.getElementById("zoomOutBtn").addEventListener("click", zoomOut);
@@ -1626,7 +1627,6 @@
                 var clickedNote = notes[idx];
                 if (!connectState.sourceId) {
                     connectState.sourceId = clickedNote.id;
-                    setConnectHint("Now click a target idea...");
                     render();
                 } else {
                     if (clickedNote.id !== connectState.sourceId) {
@@ -1833,7 +1833,6 @@
                     toggleConnectMode();
                 }
                 connectState.sourceId = notes[contextMenuState.noteIdx].id;
-                setConnectHint("Now click a target idea...");
                 render();
             }
 

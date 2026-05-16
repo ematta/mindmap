@@ -23,9 +23,31 @@ body {
     background: #2c3e50;
     display: flex;
     align-items: center;
+    justify-content: space-between;
     padding: 0 16px;
     z-index: 10;
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+.toolbar-left {
+    display: flex;
+    align-items: center;
+}
+
+.app-title {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.app-title:hover {
+    opacity: 0.85;
 }
 
 .toolbar-section-btn {
@@ -552,4 +574,86 @@ body {
 
 [data-theme="dark"] #toast {
     background: #3d566e;
+}
+
+.about-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    display: none;
+}
+
+.about-modal-backdrop.visible {
+    display: block;
+}
+
+.about-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    z-index: 201;
+    width: 90%;
+    max-width: 480px;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.about-modal.visible {
+    display: flex;
+}
+
+.about-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.about-modal-header h2 {
+    font-size: 18px;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.about-modal-body {
+    padding: 20px;
+    font-size: 14px;
+    line-height: 1.6;
+    color: #444;
+}
+
+.about-modal-body p {
+    margin-bottom: 12px;
+}
+
+.about-modal-body p:last-child {
+    margin-bottom: 0;
+}
+
+[data-theme="dark"] .about-modal {
+    background: #2a2a3a;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+[data-theme="dark"] .about-modal-header {
+    border-bottom-color: #444;
+}
+
+[data-theme="dark"] .about-modal-header h2 {
+    color: #ddd;
+}
+
+[data-theme="dark"] .about-modal-body {
+    color: #ccc;
+}
+
+[data-theme="dark"] .about-modal-backdrop {
+    background: rgba(0,0,0,0.6);
 }
