@@ -1,16 +1,35 @@
+/**
+ * MindMap — Vanilla HTML5 Canvas brainstorming SPA
+ *
+ * Everything lives in a single IIFE to avoid polluting the global scope.
+ * Uses `var` throughout for broad browser compatibility (no let/const).
+ * No frameworks, no build step, no external dependencies.
+ *
+ * Architecture overview:
+ *   - IndexedDB stores: notes, connections, viewport, boards
+ *   - Single <canvas> element for all rendering (immediate-mode)
+ *   - Flat state objects track interaction modes (drag, resize, pan, edit, connect)
+ *   - Coordinate system: world coords stored in data, screen coords for events
+ *     Conversion: worldX = (screenX - panX) / zoomLevel
+ */
 (function () {
     "use strict";
 
+    /* ── IndexedDB Configuration ─────────────────────────────────── */
     var DB_NAME = "mindmapdb";
     var DB_VERSION = 5;
     var NOTES_STORE = "notes";
     var CONNS_STORE = "connections";
     var VIEWPORT_STORE = "viewport";
     var BOARDS_STORE = "boards";
-    var CURRENT_BOARD_KEY = "mindmap-current-board";
-    var TOOLBAR_HEIGHT = 48;
-    var NOTE_WIDTH = 220;
-    var NOTE_HEIGHT = 180;
+    var CURRENT_BOARD_KEY = "mindmap-current-board"; // localStorage key for last-used board
+
+    /* ── Layout Constants ────────────────────────────────────────── */
+    var TOOLBAR_HEIGHT = 48;  // must match #toolbar height in CSS
+    var NOTE_WIDTH = 220;     // default note width (px, in world coords)
+    var NOTE_HEIGHT = 180;    // default note height
+
+    /* Color palette for notes — cycles through on creation */
     var NOTE_COLORS = [
         { fill: "#fff9b1", stroke: "#e6d935" },
         { fill: "#ffcccb", stroke: "#e67373" },
@@ -19,13 +38,14 @@
         { fill: "#e6ccff", stroke: "#a366d9" },
         { fill: "#ffe0b3", stroke: "#e6a34d" }
     ];
-    var COLOR_CYCLE = 0;
-    var MIN_NOTE_WIDTH = 120;
+    var COLOR_CYCLE = 0;      // tracks next color index; updated on load to avoid duplicates
+    var MIN_NOTE_WIDTH = 120;  // minimum resizable note dimensions
     var MIN_NOTE_HEIGHT = 80;
-    var MIN_ZOOM = 0.33;
+    var MIN_ZOOM = 0.33;      // zoom range limits
     var MAX_ZOOM = 2.0;
-    var ZOOM_STEP = 1.15;
+    var ZOOM_STEP = 1.15;     // multiplicative zoom factor per scroll tick
 
+    /* Word lists for random board name generation (adjective + noun) */
     var ADJECTIVES = [
         "Swift", "Bold", "Bright", "Calm", "Clever", "Cosmic", "Dreamy",
         "Eager", "Frosty", "Gentle", "Happy", "Keen", "Lively", "Noble",
@@ -39,14 +59,21 @@
         "Echo", "Flare", "Grove", "Haven", "Lumen", "Peak", "Realm"
     ];
 
-    var db = null;
-    var notes = [];
-    var connections = [];
-    var boards = [];
+    /* ── Runtime State ────────────────────────────────────────────── */
+    var db = null;        // IndexedDB database instance (set in openDB)
+    var notes = [];       // notes for current board (in-memory cache)
+    var connections = []; // connections for current board
+    var boards = [];      // all boards
     var currentBoardId = null;
     var canvas, ctx;
     var dpr = window.devicePixelRatio || 1;
 
+    /* ── Interaction State Objects ────────────────────────────────── *
+     * These flat objects track which interaction mode is active.
+     * They are effectively mutually exclusive — mousedown handlers
+     * check them in priority order.                                   */
+
+    /** Note body dragging */
     var drag = {
         active: false,
         noteIdx: -1,
@@ -54,6 +81,7 @@
         offsetY: 0
     };
 
+    /** Note corner resizing */
     var resize = {
         active: false,
         noteIdx: -1,
@@ -63,21 +91,25 @@
         startH: 0
     };
 
+    /** Body text editing (floating textarea overlay) */
     var editState = {
         active: false,
         noteIdx: -1
     };
 
+    /** Header/title editing (floating input overlay) */
     var headerEditState = {
         active: false,
         noteIdx: -1
     };
 
+    /** Connection creation mode (click source, then click target) */
     var connectState = {
         active: false,
         sourceId: null
     };
 
+    /** Context menu state — which note/connection the menu is open on */
     var contextMenuState = {
         noteIdx: -1
     };
@@ -86,12 +118,14 @@
         connIdx: -1
     };
 
-    var contextMenuPos = { x: 0, y: 0 };
+    var contextMenuPos = { x: 0, y: 0 }; // world coords where context menu was opened
 
+    /* ── Viewport State (pan & zoom) ─────────────────────────────── */
     var zoomLevel = 1.0;
     var panX = 0;
     var panY = 0;
 
+    /** Canvas panning state (mousedown on empty space) */
     var pan = {
         active: false,
         startX: 0,
@@ -100,10 +134,13 @@
         startPanY: 0
     };
 
-    var THEME_KEY = "mindmap-theme";
-    var themePreference = "system";
+    /* ── Theme System ────────────────────────────────────────────── */
+    var THEME_KEY = "mindmap-theme"; // localStorage key
+    var themePreference = "system";  // "system" | "light" | "dark"
     var isDarkMode = false;
 
+    /** Canvas render colors for light and dark themes.
+     *  CSS-styled elements use [data-theme="dark"] selectors instead. */
     var THEME_COLORS = {
         light: {
             background: "#e8e8e8",
@@ -127,10 +164,13 @@
         }
     };
 
+    /** Detect OS dark mode preference */
     function getSystemDarkMode() {
         return window.matchMedia("(prefers-color-scheme: dark)").matches;
     }
 
+    /** Resolve and apply the effective theme (system → computed dark/light).
+     *  Sets data-theme attribute on <html> for CSS, and re-renders canvas. */
     function applyTheme() {
         if (themePreference === "system") {
             isDarkMode = getSystemDarkMode();
@@ -175,12 +215,21 @@
         }
     }
 
+    /** Generate a random board name from adjective + noun lists */
     function generateBoardName() {
         var adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
         var noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
         return adj + " " + noun;
     }
 
+    /* ── IndexedDB Setup ─────────────────────────────────────────── */
+
+    /** Open (or create/upgrade) the IndexedDB database.
+     *  Handles schema migrations for versions < 5:
+     *    - v3: adds default w/h to notes that lacked them
+     *    - v5: adds boardId index to notes/connections, seeds "default" board,
+     *          migrates viewport key from "current" to board ID
+     */
     function openDB() {
         return new Promise(function (resolve, reject) {
             var req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -294,6 +343,10 @@
         });
     }
 
+    /* ── IndexedDB CRUD Helpers ──────────────────────────────────── *
+     * All return Promises for ergonomic async usage.                   */
+
+    /** Get all records from a store */
     function dbGetAll(storeName) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readonly");
@@ -304,6 +357,7 @@
         });
     }
 
+    /** Get a single record by key */
     function dbGet(storeName, id) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readonly");
@@ -314,6 +368,7 @@
         });
     }
 
+    /** Insert or update a record (upsert by key) */
     function dbPut(storeName, item) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readwrite");
@@ -324,6 +379,7 @@
         });
     }
 
+    /** Delete a record by key */
     function dbDelete(storeName, id) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readwrite");
@@ -334,6 +390,7 @@
         });
     }
 
+    /** Query all records matching a secondary index value (e.g. all notes for a boardId) */
     function dbGetByIndex(storeName, indexName, value) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readonly");
@@ -345,6 +402,7 @@
         });
     }
 
+    /** Delete all records matching a secondary index value (used when deleting a board) */
     function dbClearByIndex(storeName, indexName, value) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readwrite");
@@ -363,6 +421,9 @@
         });
     }
 
+    /* ── Note & Connection Persistence ────────────────────────────── */
+
+    /** Persist a note to IndexedDB (fire-and-forget) */
     function saveNote(note) {
         if (db) dbPut(NOTES_STORE, note).catch(function (err) { console.error("Save note failed:", err); });
     }
@@ -379,6 +440,7 @@
         if (db) dbDelete(CONNS_STORE, id).catch(function (err) { console.error("Delete conn failed:", err); });
     }
 
+    /** Remove a note and all its connections from DB and in-memory arrays */
     function deleteConnectionsForNote(noteId) {
         var toRemove = connections.filter(function (c) {
             return c.from === noteId || c.to === noteId;
@@ -391,11 +453,17 @@
         });
     }
 
+    /* ── Viewport Persistence ────────────────────────────────────── *
+     * Viewport (panX, panY, zoomLevel) is stored per board in the     *
+     * viewport object store, keyed by boardId.                         */
+
+    /** Save current viewport to IndexedDB for the active board */
     function saveViewport() {
         if (!db || !currentBoardId) return;
         dbPut(VIEWPORT_STORE, { id: currentBoardId, panX: panX, panY: panY, zoomLevel: zoomLevel }).catch(function (err) { console.error("Save viewport failed:", err); });
     }
 
+    /** Load viewport for a given board, resetting to defaults if none saved */
     function loadViewport(boardId) {
         if (!db) return Promise.resolve();
         return dbGet(VIEWPORT_STORE, boardId).then(function (vp) {
@@ -411,17 +479,22 @@
         });
     }
 
+    /* ── Board Management ─────────────────────────────────────────── */
+
+    /** Load all boards from IndexedDB into memory */
     function loadBoards() {
         return dbGetAll(BOARDS_STORE).then(function (result) {
             boards = result;
         });
     }
 
+    /** Save a board record, updating its updatedAt timestamp */
     function saveBoard(board) {
         board.updatedAt = Date.now();
         return dbPut(BOARDS_STORE, board);
     }
 
+    /** Create a new board with a random name, persist it, and return it */
     function createBoard(name) {
         var board = {
             id: Date.now() + "-" + Math.random().toString(36).substr(2, 6),
@@ -435,6 +508,7 @@
         });
     }
 
+    /** Delete a board and all associated notes, connections, and viewport */
     function deleteBoardAndData(boardId) {
         var idx = boards.findIndex(function (b) { return b.id === boardId; });
         if (idx === -1) return Promise.resolve();
@@ -449,6 +523,7 @@
         });
     }
 
+    /** Switch to a different board: save current viewport, load new data, re-render */
     function switchToBoard(boardId) {
         if (boardId === currentBoardId) {
             return Promise.resolve();
@@ -468,6 +543,8 @@
         });
     }
 
+    /** Load notes, connections, and viewport for a given board from IndexedDB.
+     *  Also resets the color cycle counter to avoid duplicating existing colors. */
     function loadBoardData(boardId) {
         return Promise.all([
             dbGetByIndex(NOTES_STORE, "boardId", boardId),
@@ -490,6 +567,9 @@
         });
     }
 
+    /* ── Note & Connection Factories ──────────────────────────────── */
+
+    /** Create a new note object with auto-cycled color and unique ID */
     function createNote(x, y) {
         var color = NOTE_COLORS[COLOR_CYCLE % NOTE_COLORS.length];
         COLOR_CYCLE++;
@@ -506,6 +586,7 @@
         };
     }
 
+    /** Create a connection object. ID format: "fromId->toId" */
     function createConnection(fromId, toId) {
         return {
             id: fromId + "->" + toId,
@@ -515,6 +596,9 @@
         };
     }
 
+    /* ── Geometry Helpers ────────────────────────────────────────── */
+
+    /** Look up a note by its ID (linear scan) */
     function findNoteById(id) {
         for (var i = 0; i < notes.length; i++) {
             if (notes[i].id === id) return notes[i];
@@ -522,6 +606,8 @@
         return null;
     }
 
+    /** Calculate the point on a note's bounding rectangle edge that faces
+     *  towards (targetX, targetY). Used to anchor arrow endpoints. */
     function getEdgePoint(note, targetX, targetY) {
         var cx = note.x + note.w / 2;
         var cy = note.y + note.h / 2;
@@ -548,6 +634,10 @@
         };
     }
 
+    /* ── Canvas Drawing Functions ────────────────────────────────── */
+
+    /** Draw a directional arrow from one note to another.
+     *  Arrow starts/ends at the edge points of the bounding rectangles. */
     function drawArrow(fromNote, toNote) {
         var fromCx = fromNote.x + fromNote.w / 2;
         var fromCy = fromNote.y + fromNote.h / 2;
@@ -584,6 +674,8 @@
         ctx.restore();
     }
 
+    /** Draw the background dot grid. Only draws dots within the visible
+     *  viewport to avoid rendering thousands of off-screen dots. */
     function drawDotGrid() {
         var spacing = 30;
         var screenW = canvas.width / dpr;
@@ -607,6 +699,8 @@
         }
     }
 
+    /** Word-wrap text to fit within maxWidth (canvas measureText).
+     *  Returns an array of lines. */
     function wrapText(text, maxWidth) {
         var words = text.split(" ");
         var lines = [];
@@ -624,6 +718,9 @@
         return lines;
     }
 
+    /** Draw a single note card on the canvas.
+     *  Renders: rounded rect with shadow, header, separator, body text,
+     *  close button (×), resize handle (triangle), and edit/connect indicators. */
     function drawNote(note, idx) {
         var x = note.x;
         var y = note.y;
@@ -727,6 +824,11 @@
         ctx.restore();
     }
 
+    /* ── Main Render Loop ────────────────────────────────────────── */
+
+    /** Full canvas redraw. Applies DPR scaling, pan/zoom transform,
+     *  then draws: background → dot grid → connections → notes.
+     *  Called after every state change (move, resize, edit, etc.) */
     function render() {
         ctx.save();
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -761,6 +863,9 @@
         if (label) label.textContent = Math.round(zoomLevel * 100) + "%";
     }
 
+    /* ── Zoom & Pan Controls ─────────────────────────────────────── */
+
+    /** Zoom around a specific screen-space point (preserves that point's world position) */
     function zoomAtPoint(cx, cy, factor) {
         var oldZoom = zoomLevel;
         var newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomLevel * factor));
@@ -798,6 +903,10 @@
         render();
     }
 
+    /* ── Hit Testing ─────────────────────────────────────────────── *
+     * All hit tests operate in world coordinates.                       */
+
+    /** Return the index of the topmost note at (mx, my), or -1 */
     function hitTest(mx, my) {
         for (var i = notes.length - 1; i >= 0; i--) {
             var n = notes[i];
@@ -808,6 +917,7 @@
         return -1;
     }
 
+    /** Calculate perpendicular distance from point (px,py) to line segment (x1,y1)→(x2,y2) */
     function pointToSegmentDist(px, py, x1, y1, x2, y2) {
         var dx = x2 - x1;
         var dy = y2 - y1;
@@ -820,6 +930,7 @@
         return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
     }
 
+    /** Return the index of the connection closest to (mx, my) within 8px threshold, or -1 */
     function hitTestConnection(mx, my) {
         var threshold = 8;
         for (var i = connections.length - 1; i >= 0; i--) {
@@ -839,18 +950,21 @@
         return -1;
     }
 
+    /** Check if (mx, my) is within the × close button region of a note */
     function isCloseBtn(mx, my, note) {
         var closeX = note.x + note.w - 24;
         var closeY = note.y + 6;
         return mx >= closeX && mx <= closeX + 20 && my >= closeY && my <= closeY + 20;
     }
 
+    /** Move a note to the end of the array so it renders on top. Returns new index. */
     function bringToFront(idx) {
         var note = notes.splice(idx, 1)[0];
         notes.push(note);
         return notes.length - 1;
     }
 
+    /** Resize canvas to fill the window, accounting for device pixel ratio for sharp rendering */
     function resizeCanvas() {
         dpr = window.devicePixelRatio || 1;
         canvas.width = window.innerWidth * dpr;
@@ -866,6 +980,11 @@
         render();
     }
 
+    /* ── Text Editing (floating overlays) ────────────────────────── *
+     * Editing is done via real DOM elements (textarea/input)           *
+     * positioned over the canvas at the note's screen coordinates.     */
+
+    /** Show a floating textarea over a note's body area for editing */
     function showInput(noteIdx) {
         hideInput();
         var note = notes[noteIdx];
@@ -918,6 +1037,7 @@
         editState.noteIdx = -1;
     }
 
+    /** Write textarea value back to the note and persist */
     function commitInput(idx) {
         var el = document.getElementById("noteInput");
         if (el && notes[idx]) {
@@ -928,6 +1048,7 @@
         render();
     }
 
+    /** Show a floating input over a note's header area for title editing */
     function showHeaderInput(noteIdx) {
         hideHeaderInput();
         var note = notes[noteIdx];
@@ -992,10 +1113,12 @@
         render();
     }
 
+    /** Check if a point is within the header area (top 28px of the note) */
     function isHeaderArea(mx, my, note) {
         return mx >= note.x && mx <= note.x + note.w && my >= note.y && my <= note.y + 28;
     }
 
+    /** Check if a point is within the bottom-right resize handle (12×12px) */
     function isResizeHandle(mx, my, note) {
         var handleSize = 12;
         return mx >= note.x + note.w - handleSize &&
@@ -1004,6 +1127,7 @@
                my <= note.y + note.h;
     }
 
+    /** Convert mouse event screen coords to world coords (accounting for pan & zoom) */
     function getMousePos(e) {
         var rect = canvas.getBoundingClientRect();
         var screenX = e.clientX - rect.left;
@@ -1014,6 +1138,7 @@
         };
     }
 
+    /** Create a note at a specific world position and immediately open its editor */
     function addNoteAt(x, y) {
         var note = createNote(x - NOTE_WIDTH / 2, y - NOTE_HEIGHT / 2);
         notes.push(note);
@@ -1022,6 +1147,7 @@
         showInput(notes.length - 1);
     }
 
+    /** Create a note at a random position within the visible viewport area */
     function addNote() {
         var screenW = canvas.width / dpr;
         var screenH = canvas.height / dpr;
@@ -1052,6 +1178,9 @@
         showInput(notes.length - 1);
     }
 
+    /* ── Context Menus ───────────────────────────────────────────── */
+
+    /** Hide all context menus and reset their state */
     function hideContextMenu() {
         document.getElementById("contextMenu").classList.remove("visible");
         document.getElementById("canvasMenu").classList.remove("visible");
@@ -1060,6 +1189,7 @@
         connectionMenuState.connIdx = -1;
     }
 
+    /** Show the canvas background context menu (right-click on empty space) */
     function showCanvasMenu(e) {
         e.preventDefault();
         hideContextMenu();
@@ -1082,16 +1212,21 @@
         });
     }
 
+    /* ── Share / Import / Export ─────────────────────────────────── */
+
+    /** Base64-encode a JS object for URL hash sharing */
     function encodeState(data) {
         var json = JSON.stringify(data);
         return btoa(unescape(encodeURIComponent(json)));
     }
 
+    /** Decode a base64 URL hash back to a JS object */
     function decodeState(hash) {
         var json = decodeURIComponent(escape(atob(hash)));
         return JSON.parse(json);
     }
 
+    /** Copy text to clipboard with fallback for older browsers */
     function copyToClipboard(text) {
         if (navigator.clipboard && navigator.clipboard.writeText) {
             return navigator.clipboard.writeText(text);
@@ -1114,6 +1249,7 @@
         });
     }
 
+    /** Show a temporary toast notification at the bottom of the screen */
     function showToast(message) {
         var existing = document.getElementById("toast");
         if (existing) existing.remove();
@@ -1133,6 +1269,8 @@
         }, 3000);
     }
 
+    /** Encode current board state into the URL hash and copy to clipboard.
+     *  Rejects if encoded state exceeds ~65KB (URL length limits). */
     function shareState() {
         if (notes.length === 0) {
             showToast("Nothing to share — add some ideas first!");
@@ -1163,6 +1301,8 @@
         });
     }
 
+    /** Check if the URL contains shared board data (#base64...).
+     *  If found, prompt the user and load it as a new board. */
     function loadSharedState() {
         var hash = window.location.hash;
         if (!hash || hash.length < 2) return;
@@ -1236,6 +1376,7 @@
         }
     }
 
+    /** Export current board as a downloadable JSON file */
     function exportState() {
         var currentBoard = boards.find(function (b) { return b.id === currentBoardId; });
         var boardName = currentBoard ? currentBoard.name : "MindMap";
@@ -1258,6 +1399,7 @@
         URL.revokeObjectURL(url);
     }
 
+    /** Prompt user to select a JSON file and import it as a new board */
     function importState() {
         var input = document.getElementById("importInput");
         input.value = "";
@@ -1331,6 +1473,7 @@
         input.click();
     }
 
+    /** Show the note context menu (right-click on a note) */
     function showContextMenu(e, noteIdx) {
         e.preventDefault();
         var pos = getMousePos(e);
@@ -1353,6 +1496,7 @@
         });
     }
 
+    /** Show the connection context menu (right-click on a connection line) */
     function showConnectionMenu(e, connIdx) {
         e.preventDefault();
         hideContextMenu();
@@ -1373,6 +1517,9 @@
         });
     }
 
+    /* ── Board Panel (slide-out sidebar) ─────────────────────────── */
+
+    /** Open the board panel sidebar */
     function openBoardPanel() {
         document.getElementById("boardPanel").classList.add("visible");
         document.getElementById("boardPanelBackdrop").classList.add("visible");
@@ -1384,6 +1531,9 @@
         document.getElementById("boardPanelBackdrop").classList.remove("visible");
     }
 
+    /* ── About Modal ─────────────────────────────────────────────── */
+
+    /** Open the about/info modal (triggered by clicking the "MindMap" title) */
     function openAboutModal() {
         document.getElementById("aboutModal").classList.add("visible");
         document.getElementById("aboutModalBackdrop").classList.add("visible");
@@ -1394,6 +1544,7 @@
         document.getElementById("aboutModalBackdrop").classList.remove("visible");
     }
 
+    /** Update the toolbar board name display and page title */
     function updateBoardNameDisplay() {
         var el = document.getElementById("currentBoardName");
         if (!el) return;
@@ -1403,6 +1554,8 @@
         document.title = name + " — MindMap";
     }
 
+    /** Render the board list inside the slide-out panel.
+     *  Boards are sorted by updatedAt (most recent first). */
     function renderBoardList() {
         var list = document.getElementById("boardList");
         if (!list) return;
@@ -1449,6 +1602,8 @@
         }
     }
 
+    /** Handle clicks within the board list (switch, rename, delete).
+     *  Uses event delegation on the boardList container. */
     function handleBoardListClick(e) {
         var target = e.target;
 
@@ -1490,6 +1645,8 @@
         }
     }
 
+    /** Replace a board item's name element with an inline text input for renaming.
+     *  Commits on blur/Enter, cancels on Escape. */
     function startRenameBoard(boardId) {
         var board = boards.find(function (b) { return b.id === boardId; });
         if (!board) return;
@@ -1543,6 +1700,9 @@
         });
     }
 
+    /* ── Initialization ──────────────────────────────────────────── *
+     * Called on DOMContentLoaded. Sets up canvas, event listeners,      *
+     * theme, IndexedDB, and loads the last-used board.                  */
     function init() {
         loadTheme();
 

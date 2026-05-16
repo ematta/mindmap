@@ -1,4 +1,16 @@
 <!doctype html>
+<!--
+  MindMap — Vanilla HTML5 Canvas brainstorming SPA
+
+  Structure:
+    #toolbar        — Fixed top bar: board selector, add idea button, zoom/pan controls
+    #boardPanel     — Slide-out sidebar listing all boards (toggled by "Boards" button)
+    #contextMenu    — Right-click menu for notes (add idea, connect, color, theme, delete)
+    #connectionMenu — Right-click menu for connection lines (delete)
+    #canvasMenu     — Right-click menu for empty canvas (add idea, theme, export, import, share)
+    #aboutModal     — Info modal (opened by clicking "MindMap" title)
+    #canvas         — Full-viewport <canvas> for all rendering
+-->
 <html lang="en">
     <head>
         <meta charset="UTF-8" />
@@ -7,14 +19,19 @@
         <link rel="stylesheet" href="style.css" />
     </head>
     <body>
+        <!-- Toolbar: board switcher, add idea, app title, zoom/pan controls -->
         <div id="toolbar">
             <div class="toolbar-left">
                 <button id="boardsBtn" class="toolbar-section-btn">&#9776; Boards</button>
+                <!-- Displays the name of the currently active board -->
                 <span id="currentBoardName" class="board-name-display">My Board</span>
                 <span class="toolbar-separator"></span>
+                <!-- Creates a new note at a random position in the viewport -->
                 <button id="addNoteBtn">+ Add Idea</button>
             </div>
+            <!-- Clicking the title opens the About modal -->
             <span class="app-title">MindMap</span>
+            <!-- Zoom and pan controls for the canvas viewport -->
             <span id="zoomControls" class="zoom-controls">
                 <button id="panLeftBtn" class="zoom-btn" title="Pan Left">&#x25C0;</button>
                 <button id="panUpBtn" class="zoom-btn" title="Pan Up">&#x25B2;</button>
@@ -23,18 +40,22 @@
                 <button id="zoomOutBtn" class="zoom-btn" title="Zoom Out">&#8722;</button>
                 <button id="resetZoomBtn" class="zoom-btn" title="Reset Zoom">&#x21BA;</button>
                 <button id="zoomInBtn" class="zoom-btn" title="Zoom In">+</button>
+                <!-- Shows current zoom percentage (e.g. "100%") -->
                 <span id="zoomLabel">100%</span>
             </span>
         </div>
+        <!-- Board panel: slide-out sidebar for managing multiple boards -->
         <div id="boardPanel" class="board-panel">
             <div class="board-panel-header">
                 <h3>Your Boards</h3>
                 <button id="closeBoardPanelBtn" class="close-btn">&times;</button>
             </div>
             <button id="newBoardBtn" class="new-board-btn">+ New Board</button>
+            <!-- Dynamically populated board list -->
             <div id="boardList" class="board-list"></div>
         </div>
         <div id="boardPanelBackdrop" class="board-panel-backdrop"></div>
+        <!-- Note context menu: add, connect, color, theme, delete -->
         <div id="contextMenu" class="context-menu">
             <div class="context-menu-item" data-action="add-idea">
                 <span class="context-menu-icon">+</span> Add Idea
@@ -67,11 +88,13 @@
                 <span class="context-menu-icon">&#x2715;</span> Delete Idea
             </div>
         </div>
+        <!-- Connection context menu: delete a connection arrow -->
         <div id="connectionMenu" class="context-menu">
             <div class="context-menu-item danger" data-action="delete-connection">
                 <span class="context-menu-icon">&#x2715;</span> Delete Connection
             </div>
         </div>
+        <!-- Canvas context menu: add idea, theme, export/import, share link -->
         <div id="canvasMenu" class="context-menu">
             <div class="context-menu-item" data-action="add-idea">
                 <span class="context-menu-icon">+</span> Add Idea
@@ -97,6 +120,7 @@
                 <span class="context-menu-icon">&#x2197;</span> Share Link
             </div>
         </div>
+        <!-- About modal: shown when clicking the "MindMap" title -->
         <div id="aboutModalBackdrop" class="about-modal-backdrop"></div>
         <div id="aboutModal" class="about-modal">
             <div class="about-modal-header">
@@ -108,7 +132,9 @@
                 <p>Everything runs locally in your browser. No data is sent to or stored on any server — your boards, notes, and connections are saved only in your browser's local storage.</p>
             </div>
         </div>
+        <!-- Hidden file input for JSON import -->
         <input type="file" id="importInput" accept=".json" style="display:none" />
+        <!-- Main rendering surface: all notes, connections, and grid are drawn here -->
         <canvas id="canvas"></canvas>
         <script src="app.js"></script>
     </body>
