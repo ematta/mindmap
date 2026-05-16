@@ -840,6 +840,134 @@
         });
     }
 
+    function encodeState(data) {
+        var json = JSON.stringify(data);
+        return btoa(unescape(encodeURIComponent(json)));
+    }
+
+    function decodeState(hash) {
+        var json = decodeURIComponent(escape(atob(hash)));
+        return JSON.parse(json);
+    }
+
+    function copyToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            return navigator.clipboard.writeText(text);
+        }
+        return new Promise(function (resolve, reject) {
+            var textarea = document.createElement("textarea");
+            textarea.value = text;
+            textarea.style.position = "fixed";
+            textarea.style.left = "-9999px";
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand("copy");
+                resolve();
+            } catch (err) {
+                reject(err);
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        });
+    }
+
+    function showToast(message) {
+        var existing = document.getElementById("toast");
+        if (existing) existing.remove();
+
+        var toast = document.createElement("div");
+        toast.id = "toast";
+        toast.textContent = message;
+        document.body.appendChild(toast);
+
+        requestAnimationFrame(function () {
+            toast.classList.add("visible");
+        });
+
+        setTimeout(function () {
+            toast.classList.remove("visible");
+            setTimeout(function () { toast.remove(); }, 300);
+        }, 3000);
+    }
+
+    function shareState() {
+        if (notes.length === 0) {
+            showToast("Nothing to share — add some ideas first!");
+            return;
+        }
+
+        var data = { notes: notes, connections: connections };
+        var encoded = encodeState(data);
+
+        if (encoded.length > 65000) {
+            showToast("Board is too large to share via link. Use Export instead.");
+            return;
+        }
+
+        window.location.hash = encoded;
+        var url = window.location.href;
+
+        copyToClipboard(url).then(function () {
+            showToast("Link copied to clipboard!");
+        }).catch(function () {
+            showToast("Link ready! Copy the URL from the address bar.");
+        });
+    }
+
+    function loadSharedState() {
+        var hash = window.location.hash;
+        if (!hash || hash.length < 2) return;
+
+        try {
+            var encoded = hash.substring(1);
+            var data = decodeState(encoded);
+
+            if (!data.notes || !data.connections) return;
+
+            var hasExisting = notes.length > 0 || connections.length > 0;
+
+            if (hasExisting) {
+                var doLoad = confirm("This link contains a mindmap board. Replace your current board with it?");
+                if (!doLoad) {
+                    history.replaceState(null, "", window.location.pathname);
+                    return;
+                }
+            }
+
+            notes = data.notes.map(function (n) {
+                if (!n.w) n.w = NOTE_WIDTH;
+                if (!n.h) n.h = NOTE_HEIGHT;
+                return n;
+            });
+            connections = data.connections;
+
+            COLOR_CYCLE = 0;
+            for (var i = 0; i < notes.length; i++) {
+                var ci = NOTE_COLORS.findIndex(function (c) {
+                    return c.fill === notes[i].color.fill;
+                });
+                if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
+            }
+
+            var clearNotes = db.transaction(NOTES_STORE, "readwrite").objectStore(NOTES_STORE).clear();
+            var clearConns = db.transaction(CONNS_STORE, "readwrite").objectStore(CONNS_STORE).clear();
+            clearNotes.onsuccess = function () {
+                for (var i = 0; i < notes.length; i++) saveNote(notes[i]);
+            };
+            clearConns.onsuccess = function () {
+                for (var i = 0; i < connections.length; i++) saveConnection(connections[i]);
+            };
+
+            history.replaceState(null, "", window.location.pathname);
+            render();
+            showToast("Board loaded from shared link!");
+        } catch (err) {
+            console.error("Failed to load shared state:", err);
+            history.replaceState(null, "", window.location.pathname);
+        }
+    }
+
     function exportState() {
         var data = {
             notes: notes,
@@ -1235,6 +1363,10 @@
                 importState();
             }
 
+            if (action === "share") {
+                shareState();
+            }
+
             hideContextMenu();
         });
 
@@ -1272,6 +1404,7 @@
             }
             render();
             console.log("MindMap initialized — " + notes.length + " notes, " + connections.length + " connections");
+            loadSharedState();
         }).catch(function (err) {
             console.error("IndexedDB init failed:", err);
             render();
