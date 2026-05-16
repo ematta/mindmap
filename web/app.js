@@ -48,6 +48,8 @@
         noteIdx: -1
     };
 
+    var contextMenuPos = { x: 0, y: 0 };
+
     var zoomLevel = 1.0;
     var panX = 0;
     var panY = 0;
@@ -533,6 +535,14 @@
         };
     }
 
+    function addNoteAt(x, y) {
+        var note = createNote(x - NOTE_WIDTH / 2, y - NOTE_HEIGHT / 2);
+        notes.push(note);
+        saveNote(note);
+        render();
+        showInput(notes.length - 1);
+    }
+
     function addNote() {
         var screenW = canvas.width / dpr;
         var screenH = canvas.height / dpr;
@@ -572,6 +582,9 @@
     function showCanvasMenu(e) {
         e.preventDefault();
         hideContextMenu();
+        var pos = getMousePos(e);
+        contextMenuPos.x = pos.x;
+        contextMenuPos.y = pos.y;
         var menu = document.getElementById("canvasMenu");
         menu.style.left = e.clientX + "px";
         menu.style.top = e.clientY + "px";
@@ -648,6 +661,9 @@
 
     function showContextMenu(e, noteIdx) {
         e.preventDefault();
+        var pos = getMousePos(e);
+        contextMenuPos.x = pos.x;
+        contextMenuPos.y = pos.y;
         var menu = document.getElementById("contextMenu");
         contextMenuState.noteIdx = noteIdx;
         menu.style.left = e.clientX + "px";
@@ -832,6 +848,10 @@
             if (!item) return;
             var action = item.getAttribute("data-action");
 
+            if (action === "add-idea") {
+                addNoteAt(contextMenuPos.x, contextMenuPos.y);
+            }
+
             if (action === "connect" && contextMenuState.noteIdx >= 0) {
                 if (!connectState.active) {
                     toggleConnectMode();
@@ -857,6 +877,10 @@
             var item = e.target.closest(".context-menu-item");
             if (!item) return;
             var action = item.getAttribute("data-action");
+
+            if (action === "add-idea") {
+                addNoteAt(contextMenuPos.x, contextMenuPos.y);
+            }
 
             if (action === "export") {
                 exportState();
