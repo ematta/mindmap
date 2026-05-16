@@ -64,6 +64,10 @@
         noteIdx: -1
     };
 
+    var connectionMenuState = {
+        connIdx: -1
+    };
+
     var contextMenuPos = { x: 0, y: 0 };
 
     var zoomLevel = 1.0;
@@ -550,6 +554,37 @@
         return -1;
     }
 
+    function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+        var dx = x2 - x1;
+        var dy = y2 - y1;
+        var lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return Math.sqrt((px - x1) * (px - x1) + (py - y1) * (py - y1));
+        var t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
+        var projX = x1 + t * dx;
+        var projY = y1 + t * dy;
+        return Math.sqrt((px - projX) * (px - projX) + (py - projY) * (py - projY));
+    }
+
+    function hitTestConnection(mx, my) {
+        var threshold = 8;
+        for (var i = connections.length - 1; i >= 0; i--) {
+            var fromNote = findNoteById(connections[i].from);
+            var toNote = findNoteById(connections[i].to);
+            if (!fromNote || !toNote) continue;
+            var toCx = toNote.x + toNote.w / 2;
+            var toCy = toNote.y + toNote.h / 2;
+            var fromCx = fromNote.x + fromNote.w / 2;
+            var fromCy = fromNote.y + fromNote.h / 2;
+            var start = getEdgePoint(fromNote, toCx, toCy);
+            var end = getEdgePoint(toNote, fromCx, fromCy);
+            if (pointToSegmentDist(mx, my, start.x, start.y, end.x, end.y) < threshold) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     function isCloseBtn(mx, my, note) {
         var closeX = note.x + note.w - 24;
         var closeY = note.y + 6;
@@ -778,7 +813,9 @@
     function hideContextMenu() {
         document.getElementById("contextMenu").classList.remove("visible");
         document.getElementById("canvasMenu").classList.remove("visible");
+        document.getElementById("connectionMenu").classList.remove("visible");
         contextMenuState.noteIdx = -1;
+        connectionMenuState.connIdx = -1;
     }
 
     function showCanvasMenu(e) {
@@ -887,6 +924,26 @@
         });
     }
 
+    function showConnectionMenu(e, connIdx) {
+        e.preventDefault();
+        hideContextMenu();
+        connectionMenuState.connIdx = connIdx;
+        var menu = document.getElementById("connectionMenu");
+        menu.style.left = e.clientX + "px";
+        menu.style.top = e.clientY + "px";
+        menu.classList.add("visible");
+
+        requestAnimationFrame(function () {
+            var rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                menu.style.left = (e.clientX - rect.width) + "px";
+            }
+            if (rect.bottom > window.innerHeight) {
+                menu.style.top = (e.clientY - rect.height) + "px";
+            }
+        });
+    }
+
     function init() {
         loadTheme();
 
@@ -964,7 +1021,7 @@
                         }
                     }
                     connectState.sourceId = null;
-                    setConnectHint("Click a source idea...");
+                    toggleConnectMode();
                     render();
                 }
                 return;
@@ -1034,8 +1091,12 @@
                     canvas.style.cursor = "nwse-resize";
                 } else if (connectState.active) {
                     canvas.style.cursor = idx >= 0 ? "crosshair" : "default";
+                } else if (idx >= 0) {
+                    canvas.style.cursor = "grab";
+                } else if (hitTestConnection(pos.x, pos.y) >= 0) {
+                    canvas.style.cursor = "pointer";
                 } else {
-                    canvas.style.cursor = idx >= 0 ? "grab" : "default";
+                    canvas.style.cursor = "default";
                 }
             }
         });
@@ -1081,14 +1142,20 @@
             if (idx >= 0) {
                 showContextMenu(e, idx);
             } else {
-                showCanvasMenu(e);
+                var connIdx = hitTestConnection(pos.x, pos.y);
+                if (connIdx >= 0) {
+                    showConnectionMenu(e, connIdx);
+                } else {
+                    showCanvasMenu(e);
+                }
             }
         });
 
         document.addEventListener("click", function (e) {
             var menu = document.getElementById("contextMenu");
             var canvasMenu = document.getElementById("canvasMenu");
-            if (!menu.contains(e.target) && !canvasMenu.contains(e.target)) {
+            var connMenu = document.getElementById("connectionMenu");
+            if (!menu.contains(e.target) && !canvasMenu.contains(e.target) && !connMenu.contains(e.target)) {
                 hideContextMenu();
             }
         });
@@ -1166,6 +1233,23 @@
 
             if (action === "import") {
                 importState();
+            }
+
+            hideContextMenu();
+        });
+
+        document.getElementById("connectionMenu").addEventListener("click", function (e) {
+            var item = e.target.closest(".context-menu-item");
+            if (!item) return;
+            var action = item.getAttribute("data-action");
+
+            if (action === "delete-connection" && connectionMenuState.connIdx >= 0) {
+                var conn = connections[connectionMenuState.connIdx];
+                if (conn) {
+                    deleteConnection(conn.id);
+                    connections.splice(connectionMenuState.connIdx, 1);
+                    render();
+                }
             }
 
             hideContextMenu();
