@@ -8,6 +8,9 @@
     </head>
     <body>
         <div id="toolbar">
+            <button id="boardsBtn" class="toolbar-section-btn">&#9776; Boards</button>
+            <span id="currentBoardName" class="board-name-display">My Board</span>
+            <span class="toolbar-separator"></span>
             <button id="addNoteBtn">+ Add Idea</button>
             <button id="connectBtn" class="mode-btn">Connect</button>
             <span id="connectHint" class="hint"></span>
@@ -22,6 +25,15 @@
                 <span id="zoomLabel">100%</span>
             </span>
         </div>
+        <div id="boardPanel" class="board-panel">
+            <div class="board-panel-header">
+                <h3>Your Boards</h3>
+                <button id="closeBoardPanelBtn" class="close-btn">&times;</button>
+            </div>
+            <button id="newBoardBtn" class="new-board-btn">+ New Board</button>
+            <div id="boardList" class="board-list"></div>
+        </div>
+        <div id="boardPanelBackdrop" class="board-panel-backdrop"></div>
         <div id="contextMenu" class="context-menu">
             <div class="context-menu-item" data-action="add-idea">
                 <span class="context-menu-icon">+</span> Add Idea

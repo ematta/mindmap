@@ -28,6 +28,40 @@ body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
+.toolbar-section-btn {
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    background: #3d566e;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.toolbar-section-btn:hover {
+    background: #4a6d8c;
+}
+
+.board-name-display {
+    color: #ecf0f1;
+    font-size: 14px;
+    font-weight: 600;
+    margin-left: 10px;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.toolbar-separator {
+    width: 1px;
+    height: 24px;
+    background: #4a6d8c;
+    margin: 0 12px;
+}
+
 #addNoteBtn {
     padding: 8px 20px;
     font-size: 14px;
@@ -105,6 +139,234 @@ body {
     font-size: 13px;
     min-width: 42px;
     text-align: center;
+}
+
+.board-panel-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 49;
+    display: none;
+}
+
+.board-panel-backdrop.visible {
+    display: block;
+}
+
+.board-panel {
+    position: fixed;
+    top: 48px;
+    left: -300px;
+    width: 280px;
+    bottom: 0;
+    background: #fff;
+    z-index: 50;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    transition: left 0.25s ease;
+}
+
+.board-panel.visible {
+    left: 0;
+}
+
+.board-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.board-panel-header h3 {
+    font-size: 16px;
+    color: #333;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 22px;
+    color: #999;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.close-btn:hover {
+    color: #333;
+}
+
+.new-board-btn {
+    margin: 12px 16px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    background: #27ae60;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    text-align: center;
+}
+
+.new-board-btn:hover {
+    background: #219a52;
+}
+
+.board-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.board-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.board-item:hover {
+    background: #f5f5f5;
+}
+
+.board-item.active {
+    background: #e8f4fd;
+    border-left: 3px solid #3498db;
+    padding-left: 13px;
+}
+
+.board-item-name {
+    flex: 1;
+    font-size: 14px;
+    color: #333;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-right: 8px;
+}
+
+.board-item.active .board-item-name {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.board-item-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.board-item:hover .board-item-actions {
+    opacity: 1;
+}
+
+.board-action-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: none;
+    color: #999;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.1s, color 0.1s;
+}
+
+.board-action-btn:hover {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.board-action-btn.danger:hover {
+    background: #fde8e8;
+    color: #c0392b;
+}
+
+.board-rename-input {
+    flex: 1;
+    font-size: 14px;
+    font-family: inherit;
+    padding: 2px 6px;
+    border: 2px solid #3498db;
+    border-radius: 4px;
+    outline: none;
+    margin-right: 8px;
+}
+
+[data-theme="dark"] .board-panel {
+    background: #2a2a3a;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.4);
+}
+
+[data-theme="dark"] .board-panel-header {
+    border-bottom-color: #444;
+}
+
+[data-theme="dark"] .board-panel-header h3 {
+    color: #ddd;
+}
+
+[data-theme="dark"] .close-btn {
+    color: #888;
+}
+
+[data-theme="dark"] .close-btn:hover {
+    color: #ddd;
+}
+
+[data-theme="dark"] .new-board-btn {
+    background: #27ae60;
+}
+
+[data-theme="dark"] .board-item:hover {
+    background: #333348;
+}
+
+[data-theme="dark"] .board-item.active {
+    background: #1a3a5a;
+    border-left-color: #5ba3e6;
+}
+
+[data-theme="dark"] .board-item-name {
+    color: #ddd;
+}
+
+[data-theme="dark"] .board-item.active .board-item-name {
+    color: #fff;
+}
+
+[data-theme="dark"] .board-action-btn {
+    color: #888;
+}
+
+[data-theme="dark"] .board-action-btn:hover {
+    background: #3a3a4a;
+    color: #ddd;
+}
+
+[data-theme="dark"] .board-action-btn.danger:hover {
+    background: #3a2020;
+    color: #e74c3c;
+}
+
+[data-theme="dark"] .board-rename-input {
+    background: #1a1a2e;
+    border-color: #5ba3e6;
+    color: #ddd;
+}
+
+[data-theme="dark"] .board-panel-backdrop {
+    background: rgba(0,0,0,0.5);
 }
 
 .context-menu {

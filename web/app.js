@@ -2,10 +2,12 @@
     "use strict";
 
     var DB_NAME = "mindmapdb";
-    var DB_VERSION = 4;
+    var DB_VERSION = 5;
     var NOTES_STORE = "notes";
     var CONNS_STORE = "connections";
     var VIEWPORT_STORE = "viewport";
+    var BOARDS_STORE = "boards";
+    var CURRENT_BOARD_KEY = "mindmap-current-board";
     var TOOLBAR_HEIGHT = 48;
     var NOTE_WIDTH = 220;
     var NOTE_HEIGHT = 180;
@@ -24,9 +26,24 @@
     var MAX_ZOOM = 2.0;
     var ZOOM_STEP = 1.15;
 
+    var ADJECTIVES = [
+        "Swift", "Bold", "Bright", "Calm", "Clever", "Cosmic", "Dreamy",
+        "Eager", "Frosty", "Gentle", "Happy", "Keen", "Lively", "Noble",
+        "Quick", "Sunny", "Vivid", "Witty", "Zesty", "Brave", "Dazzling",
+        "Epic", "Golden", "Mystic", "Radiant", "Silent", "Tiny", "Vast"
+    ];
+    var NOUNS = [
+        "Canvas", "Spark", "Storm", "Wave", "Forest", "Galaxy", "Horizon",
+        "Journey", "Meadow", "Nexus", "Orbit", "Prism", "Quest", "Ridge",
+        "Summit", "Tide", "Vault", "Zenith", "Atlas", "Bloom", "Drift",
+        "Echo", "Flare", "Grove", "Haven", "Lumen", "Peak", "Realm"
+    ];
+
     var db = null;
     var notes = [];
     var connections = [];
+    var boards = [];
+    var currentBoardId = null;
     var canvas, ctx;
     var dpr = window.devicePixelRatio || 1;
 
@@ -158,6 +175,12 @@
         }
     }
 
+    function generateBoardName() {
+        var adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+        var noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+        return adj + " " + noun;
+    }
+
     function openDB() {
         return new Promise(function (resolve, reject) {
             var req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -173,8 +196,13 @@
                 if (!database.objectStoreNames.contains(VIEWPORT_STORE)) {
                     database.createObjectStore(VIEWPORT_STORE, { keyPath: "id" });
                 }
+                if (!database.objectStoreNames.contains(BOARDS_STORE)) {
+                    database.createObjectStore(BOARDS_STORE, { keyPath: "id" });
+                }
+
+                var tx = e.target.transaction;
+
                 if (oldVersion < 3) {
-                    var tx = e.target.transaction;
                     if (tx.objectStoreNames.contains(NOTES_STORE)) {
                         var noteStore = tx.objectStore(NOTES_STORE);
                         noteStore.openCursor().onsuccess = function (ev) {
@@ -184,6 +212,71 @@
                                 if (!note.w) note.w = NOTE_WIDTH;
                                 if (!note.h) note.h = NOTE_HEIGHT;
                                 cursor.update(note);
+                                cursor.continue();
+                            }
+                        };
+                    }
+                }
+
+                if (oldVersion < 5) {
+                    if (tx.objectStoreNames.contains(NOTES_STORE)) {
+                        var ns = tx.objectStore(NOTES_STORE);
+                        if (!ns.indexNames.contains("boardId")) {
+                            ns.createIndex("boardId", "boardId", { unique: false });
+                        }
+                        ns.openCursor().onsuccess = function (ev) {
+                            var cursor = ev.target.result;
+                            if (cursor) {
+                                var note = cursor.value;
+                                if (!note.boardId) {
+                                    note.boardId = "default";
+                                    cursor.update(note);
+                                }
+                                cursor.continue();
+                            }
+                        };
+                    }
+                    if (tx.objectStoreNames.contains(CONNS_STORE)) {
+                        var cs = tx.objectStore(CONNS_STORE);
+                        if (!cs.indexNames.contains("boardId")) {
+                            cs.createIndex("boardId", "boardId", { unique: false });
+                        }
+                        cs.openCursor().onsuccess = function (ev) {
+                            var cursor = ev.target.result;
+                            if (cursor) {
+                                var conn = cursor.value;
+                                if (!conn.boardId) {
+                                    conn.boardId = "default";
+                                    cursor.update(conn);
+                                }
+                                cursor.continue();
+                            }
+                        };
+                    }
+                    if (tx.objectStoreNames.contains(BOARDS_STORE)) {
+                        var bs = tx.objectStore(BOARDS_STORE);
+                        var checkReq = bs.get("default");
+                        checkReq.onsuccess = function () {
+                            if (!checkReq.result) {
+                                bs.put({
+                                    id: "default",
+                                    name: "My Board",
+                                    createdAt: Date.now(),
+                                    updatedAt: Date.now()
+                                });
+                            }
+                        };
+                    }
+                    if (tx.objectStoreNames.contains(VIEWPORT_STORE)) {
+                        var vs = tx.objectStore(VIEWPORT_STORE);
+                        vs.openCursor().onsuccess = function (ev) {
+                            var cursor = ev.target.result;
+                            if (cursor) {
+                                var vp = cursor.value;
+                                if (vp.id === "current") {
+                                    vp.id = "default";
+                                    cursor.update(vp);
+                                }
                                 cursor.continue();
                             }
                         };
@@ -210,6 +303,16 @@
         });
     }
 
+    function dbGet(storeName, id) {
+        return new Promise(function (resolve, reject) {
+            var tx = db.transaction(storeName, "readonly");
+            var store = tx.objectStore(storeName);
+            var req = store.get(id);
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+        });
+    }
+
     function dbPut(storeName, item) {
         return new Promise(function (resolve, reject) {
             var tx = db.transaction(storeName, "readwrite");
@@ -227,6 +330,35 @@
             var req = store.delete(id);
             req.onsuccess = function () { resolve(); };
             req.onerror = function () { reject(req.error); };
+        });
+    }
+
+    function dbGetByIndex(storeName, indexName, value) {
+        return new Promise(function (resolve, reject) {
+            var tx = db.transaction(storeName, "readonly");
+            var store = tx.objectStore(storeName);
+            var idx = store.index(indexName);
+            var req = idx.getAll(value);
+            req.onsuccess = function () { resolve(req.result); };
+            req.onerror = function () { reject(req.error); };
+        });
+    }
+
+    function dbClearByIndex(storeName, indexName, value) {
+        return new Promise(function (resolve, reject) {
+            var tx = db.transaction(storeName, "readwrite");
+            var store = tx.objectStore(storeName);
+            var idx = store.index(indexName);
+            var req = idx.openCursor(value);
+            req.onsuccess = function (e) {
+                var cursor = e.target.result;
+                if (cursor) {
+                    cursor.delete();
+                    cursor.continue();
+                }
+            };
+            tx.oncomplete = function () { resolve(); };
+            tx.onerror = function () { reject(tx.error); };
         });
     }
 
@@ -259,18 +391,100 @@
     }
 
     function saveViewport() {
-        if (!db) return;
-        dbPut(VIEWPORT_STORE, { id: "current", panX: panX, panY: panY, zoomLevel: zoomLevel }).catch(function (err) { console.error("Save viewport failed:", err); });
+        if (!db || !currentBoardId) return;
+        dbPut(VIEWPORT_STORE, { id: currentBoardId, panX: panX, panY: panY, zoomLevel: zoomLevel }).catch(function (err) { console.error("Save viewport failed:", err); });
     }
 
-    function loadViewport() {
+    function loadViewport(boardId) {
         if (!db) return Promise.resolve();
-        return dbGetAll(VIEWPORT_STORE).then(function (results) {
-            if (results.length > 0) {
-                var vp = results[0];
+        return dbGet(VIEWPORT_STORE, boardId).then(function (vp) {
+            if (vp) {
                 panX = vp.panX || 0;
                 panY = vp.panY || 0;
                 zoomLevel = vp.zoomLevel || 1.0;
+            } else {
+                panX = 0;
+                panY = 0;
+                zoomLevel = 1.0;
+            }
+        });
+    }
+
+    function loadBoards() {
+        return dbGetAll(BOARDS_STORE).then(function (result) {
+            boards = result;
+        });
+    }
+
+    function saveBoard(board) {
+        board.updatedAt = Date.now();
+        return dbPut(BOARDS_STORE, board);
+    }
+
+    function createBoard(name) {
+        var board = {
+            id: Date.now() + "-" + Math.random().toString(36).substr(2, 6),
+            name: name || generateBoardName(),
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+        };
+        return saveBoard(board).then(function () {
+            boards.push(board);
+            return board;
+        });
+    }
+
+    function deleteBoardAndData(boardId) {
+        var idx = boards.findIndex(function (b) { return b.id === boardId; });
+        if (idx === -1) return Promise.resolve();
+
+        return Promise.all([
+            dbClearByIndex(NOTES_STORE, "boardId", boardId),
+            dbClearByIndex(CONNS_STORE, "boardId", boardId),
+            dbDelete(VIEWPORT_STORE, boardId),
+            dbDelete(BOARDS_STORE, boardId)
+        ]).then(function () {
+            boards.splice(idx, 1);
+        });
+    }
+
+    function switchToBoard(boardId) {
+        if (boardId === currentBoardId) {
+            return Promise.resolve();
+        }
+
+        saveViewport();
+
+        currentBoardId = boardId;
+        try { localStorage.setItem(CURRENT_BOARD_KEY, boardId); } catch (e) { /* ignore */ }
+
+        hideInput();
+        hideHeaderInput();
+
+        return loadBoardData(boardId).then(function () {
+            render();
+            updateBoardNameDisplay();
+        });
+    }
+
+    function loadBoardData(boardId) {
+        return Promise.all([
+            dbGetByIndex(NOTES_STORE, "boardId", boardId),
+            dbGetByIndex(CONNS_STORE, "boardId", boardId),
+            loadViewport(boardId)
+        ]).then(function (results) {
+            notes = results[0].map(function (n) {
+                if (!n.w) n.w = NOTE_WIDTH;
+                if (!n.h) n.h = NOTE_HEIGHT;
+                return n;
+            });
+            connections = results[1];
+            COLOR_CYCLE = 0;
+            for (var i = 0; i < notes.length; i++) {
+                var ci = NOTE_COLORS.findIndex(function (c) {
+                    return c.fill === notes[i].color.fill;
+                });
+                if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
             }
         });
     }
@@ -286,6 +500,7 @@
             header: "Idea",
             text: "",
             color: color,
+            boardId: currentBoardId,
             id: Date.now() + "-" + Math.random().toString(36).substr(2, 6)
         };
     }
@@ -294,7 +509,8 @@
         return {
             id: fromId + "->" + toId,
             from: fromId,
-            to: toId
+            to: toId,
+            boardId: currentBoardId
         };
     }
 
@@ -499,7 +715,6 @@
             ctx.setLineDash([]);
         }
 
-        // Resize handle
         ctx.fillStyle = note.color.stroke;
         ctx.beginPath();
         ctx.moveTo(x + w - 10, y + h - 4);
@@ -935,7 +1150,13 @@
             return;
         }
 
-        var data = { notes: notes, connections: connections, viewport: { panX: panX, panY: panY, zoomLevel: zoomLevel } };
+        var currentBoard = boards.find(function (b) { return b.id === currentBoardId; });
+        var data = {
+            boardName: currentBoard ? currentBoard.name : "Shared Board",
+            notes: notes,
+            connections: connections,
+            viewport: { panX: panX, panY: panY, zoomLevel: zoomLevel }
+        };
         var encoded = encodeState(data);
 
         if (encoded.length > 65000) {
@@ -963,50 +1184,63 @@
 
             if (!data.notes || !data.connections) return;
 
-            var hasExisting = notes.length > 0 || connections.length > 0;
+            var boardName = data.boardName || "Shared Board";
 
-            if (hasExisting) {
-                var doLoad = confirm("This link contains a mindmap board. Replace your current board with it?");
-                if (!doLoad) {
-                    history.replaceState(null, "", window.location.pathname);
-                    return;
-                }
+            var doLoad = confirm('Add "' + boardName + '" as a new board?');
+            if (!doLoad) {
+                history.replaceState(null, "", window.location.pathname);
+                return;
             }
 
-            notes = data.notes.map(function (n) {
-                if (!n.w) n.w = NOTE_WIDTH;
-                if (!n.h) n.h = NOTE_HEIGHT;
-                return n;
-            });
-            connections = data.connections;
+            createBoard(boardName).then(function (board) {
+                currentBoardId = board.id;
+                try { localStorage.setItem(CURRENT_BOARD_KEY, board.id); } catch (e) { /* ignore */ }
 
-            if (data.viewport) {
-                panX = data.viewport.panX || 0;
-                panY = data.viewport.panY || 0;
-                zoomLevel = data.viewport.zoomLevel || 1.0;
-                saveViewport();
-            }
-
-            COLOR_CYCLE = 0;
-            for (var i = 0; i < notes.length; i++) {
-                var ci = NOTE_COLORS.findIndex(function (c) {
-                    return c.fill === notes[i].color.fill;
+                notes = data.notes.map(function (n) {
+                    if (!n.w) n.w = NOTE_WIDTH;
+                    if (!n.h) n.h = NOTE_HEIGHT;
+                    n.boardId = board.id;
+                    return n;
                 });
-                if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
-            }
+                connections = data.connections.map(function (c) {
+                    c.boardId = board.id;
+                    return c;
+                });
 
-            var clearNotes = db.transaction(NOTES_STORE, "readwrite").objectStore(NOTES_STORE).clear();
-            var clearConns = db.transaction(CONNS_STORE, "readwrite").objectStore(CONNS_STORE).clear();
-            clearNotes.onsuccess = function () {
-                for (var i = 0; i < notes.length; i++) saveNote(notes[i]);
-            };
-            clearConns.onsuccess = function () {
-                for (var i = 0; i < connections.length; i++) saveConnection(connections[i]);
-            };
+                panX = 0;
+                panY = 0;
+                zoomLevel = 1.0;
+                if (data.viewport) {
+                    panX = data.viewport.panX || 0;
+                    panY = data.viewport.panY || 0;
+                    zoomLevel = data.viewport.zoomLevel || 1.0;
+                }
 
-            history.replaceState(null, "", window.location.pathname);
-            render();
-            showToast("Board loaded from shared link!");
+                COLOR_CYCLE = 0;
+                for (var i = 0; i < notes.length; i++) {
+                    var ci = NOTE_COLORS.findIndex(function (c) {
+                        return c.fill === notes[i].color.fill;
+                    });
+                    if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
+                }
+
+                var promises = [];
+                for (var i = 0; i < notes.length; i++) {
+                    promises.push(dbPut(NOTES_STORE, notes[i]));
+                }
+                for (var j = 0; j < connections.length; j++) {
+                    promises.push(dbPut(CONNS_STORE, connections[j]));
+                }
+                promises.push(dbPut(VIEWPORT_STORE, { id: board.id, panX: panX, panY: panY, zoomLevel: zoomLevel }));
+
+                return Promise.all(promises).then(function () {
+                    history.replaceState(null, "", window.location.pathname);
+                    render();
+                    updateBoardNameDisplay();
+                    renderBoardList();
+                    showToast('Board "' + boardName + '" added!');
+                });
+            });
         } catch (err) {
             console.error("Failed to load shared state:", err);
             history.replaceState(null, "", window.location.pathname);
@@ -1014,7 +1248,10 @@
     }
 
     function exportState() {
+        var currentBoard = boards.find(function (b) { return b.id === currentBoardId; });
+        var boardName = currentBoard ? currentBoard.name : "MindMap";
         var data = {
+            boardName: boardName,
             notes: notes,
             connections: connections,
             viewport: { panX: panX, panY: panY, zoomLevel: zoomLevel }
@@ -1024,7 +1261,8 @@
         var url = URL.createObjectURL(blob);
         var a = document.createElement("a");
         a.href = url;
-        a.download = "mindmap-" + new Date().toISOString().slice(0, 10) + ".json";
+        var safeName = boardName.replace(/[^a-z0-9]/gi, "-").toLowerCase();
+        a.download = safeName + "-" + new Date().toISOString().slice(0, 10) + ".json";
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -1045,34 +1283,56 @@
                         alert("Invalid mindmap file.");
                         return;
                     }
-                    notes = data.notes.map(function (n) {
-                        if (!n.w) n.w = NOTE_WIDTH;
-                        if (!n.h) n.h = NOTE_HEIGHT;
-                        return n;
-                    });
-                    connections = data.connections;
-                    if (data.viewport) {
-                        panX = data.viewport.panX || 0;
-                        panY = data.viewport.panY || 0;
-                        zoomLevel = data.viewport.zoomLevel || 1.0;
-                        saveViewport();
-                    }
-                    COLOR_CYCLE = 0;
-                    for (var i = 0; i < notes.length; i++) {
-                        var ci = NOTE_COLORS.findIndex(function (c) {
-                            return c.fill === notes[i].color.fill;
+
+                    var boardName = data.boardName || "Imported Board";
+                    createBoard(boardName).then(function (board) {
+                        currentBoardId = board.id;
+                        try { localStorage.setItem(CURRENT_BOARD_KEY, board.id); } catch (e) { /* ignore */ }
+
+                        notes = data.notes.map(function (n) {
+                            if (!n.w) n.w = NOTE_WIDTH;
+                            if (!n.h) n.h = NOTE_HEIGHT;
+                            n.boardId = board.id;
+                            return n;
                         });
-                        if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
-                    }
-                    var clearNotes = db.transaction(NOTES_STORE, "readwrite").objectStore(NOTES_STORE).clear();
-                    var clearConns = db.transaction(CONNS_STORE, "readwrite").objectStore(CONNS_STORE).clear();
-                    clearNotes.onsuccess = function () {
-                        for (var i = 0; i < notes.length; i++) saveNote(notes[i]);
-                    };
-                    clearConns.onsuccess = function () {
-                        for (var i = 0; i < connections.length; i++) saveConnection(connections[i]);
-                    };
-                    render();
+                        connections = data.connections.map(function (c) {
+                            c.boardId = board.id;
+                            return c;
+                        });
+
+                        panX = 0;
+                        panY = 0;
+                        zoomLevel = 1.0;
+                        if (data.viewport) {
+                            panX = data.viewport.panX || 0;
+                            panY = data.viewport.panY || 0;
+                            zoomLevel = data.viewport.zoomLevel || 1.0;
+                        }
+
+                        COLOR_CYCLE = 0;
+                        for (var i = 0; i < notes.length; i++) {
+                            var ci = NOTE_COLORS.findIndex(function (c) {
+                                return c.fill === notes[i].color.fill;
+                            });
+                            if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
+                        }
+
+                        var promises = [];
+                        for (var i = 0; i < notes.length; i++) {
+                            promises.push(dbPut(NOTES_STORE, notes[i]));
+                        }
+                        for (var j = 0; j < connections.length; j++) {
+                            promises.push(dbPut(CONNS_STORE, connections[j]));
+                        }
+                        promises.push(dbPut(VIEWPORT_STORE, { id: board.id, panX: panX, panY: panY, zoomLevel: zoomLevel }));
+
+                        return Promise.all(promises).then(function () {
+                            render();
+                            updateBoardNameDisplay();
+                            renderBoardList();
+                            showToast('Board "' + boardName + '" imported!');
+                        });
+                    });
                 } catch (err) {
                     alert("Failed to parse file: " + err.message);
                 }
@@ -1124,6 +1384,166 @@
         });
     }
 
+    function openBoardPanel() {
+        document.getElementById("boardPanel").classList.add("visible");
+        document.getElementById("boardPanelBackdrop").classList.add("visible");
+        renderBoardList();
+    }
+
+    function closeBoardPanel() {
+        document.getElementById("boardPanel").classList.remove("visible");
+        document.getElementById("boardPanelBackdrop").classList.remove("visible");
+    }
+
+    function updateBoardNameDisplay() {
+        var el = document.getElementById("currentBoardName");
+        if (!el) return;
+        var board = boards.find(function (b) { return b.id === currentBoardId; });
+        var name = board ? board.name : "Untitled";
+        el.textContent = name;
+        document.title = name + " — MindMap";
+    }
+
+    function renderBoardList() {
+        var list = document.getElementById("boardList");
+        if (!list) return;
+        list.innerHTML = "";
+
+        var sorted = boards.slice().sort(function (a, b) {
+            return (b.updatedAt || 0) - (a.updatedAt || 0);
+        });
+
+        for (var i = 0; i < sorted.length; i++) {
+            var board = sorted[i];
+            var item = document.createElement("div");
+            item.className = "board-item" + (board.id === currentBoardId ? " active" : "");
+            item.setAttribute("data-board-id", board.id);
+
+            var nameEl = document.createElement("span");
+            nameEl.className = "board-item-name";
+            nameEl.textContent = board.name;
+
+            var actions = document.createElement("div");
+            actions.className = "board-item-actions";
+
+            var renameBtn = document.createElement("button");
+            renameBtn.className = "board-action-btn";
+            renameBtn.title = "Rename";
+            renameBtn.textContent = "\u270E";
+            renameBtn.setAttribute("data-action", "rename");
+            renameBtn.setAttribute("data-board-id", board.id);
+
+            var deleteBtn = document.createElement("button");
+            deleteBtn.className = "board-action-btn danger";
+            deleteBtn.title = "Delete";
+            deleteBtn.textContent = "\u00D7";
+            deleteBtn.setAttribute("data-action", "delete");
+            deleteBtn.setAttribute("data-board-id", board.id);
+
+            actions.appendChild(renameBtn);
+            actions.appendChild(deleteBtn);
+
+            item.appendChild(nameEl);
+            item.appendChild(actions);
+
+            list.appendChild(item);
+        }
+    }
+
+    function handleBoardListClick(e) {
+        var target = e.target;
+
+        var action = target.getAttribute("data-action");
+        var boardId = target.getAttribute("data-board-id");
+
+        if (action === "rename" && boardId) {
+            startRenameBoard(boardId);
+            return;
+        }
+
+        if (action === "delete" && boardId) {
+            if (boards.length <= 1) {
+                showToast("Can't delete the only board.");
+                return;
+            }
+            if (confirm("Delete this board and all its ideas?")) {
+                var wasCurrent = boardId === currentBoardId;
+                deleteBoardAndData(boardId).then(function () {
+                    if (wasCurrent) {
+                        return switchToBoard(boards[0].id);
+                    }
+                }).then(function () {
+                    renderBoardList();
+                    updateBoardNameDisplay();
+                });
+            }
+            return;
+        }
+
+        var item = target.closest(".board-item");
+        if (item) {
+            var clickedBoardId = item.getAttribute("data-board-id");
+            if (clickedBoardId && clickedBoardId !== currentBoardId) {
+                switchToBoard(clickedBoardId).then(function () {
+                    renderBoardList();
+                });
+            }
+        }
+    }
+
+    function startRenameBoard(boardId) {
+        var board = boards.find(function (b) { return b.id === boardId; });
+        if (!board) return;
+
+        var item = document.querySelector('.board-item[data-board-id="' + boardId + '"]');
+        if (!item) return;
+
+        var nameEl = item.querySelector(".board-item-name");
+        if (!nameEl) return;
+
+        var input = document.createElement("input");
+        input.type = "text";
+        input.className = "board-rename-input";
+        input.value = board.name;
+
+        nameEl.replaceWith(input);
+        input.focus();
+        input.select();
+
+        function commitRename() {
+            var newName = input.value.trim();
+            if (newName && newName !== board.name) {
+                board.name = newName;
+                saveBoard(board).then(function () {
+                    renderBoardList();
+                    updateBoardNameDisplay();
+                });
+            } else {
+                renderBoardList();
+            }
+        }
+
+        var committed = false;
+        input.addEventListener("blur", function () {
+            if (!committed) {
+                committed = true;
+                commitRename();
+            }
+        });
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                committed = true;
+                commitRename();
+            }
+            if (e.key === "Escape") {
+                e.preventDefault();
+                committed = true;
+                renderBoardList();
+            }
+        });
+    }
+
     function init() {
         loadTheme();
 
@@ -1140,6 +1560,19 @@
         });
 
         window.addEventListener("resize", resizeCanvas);
+
+        document.getElementById("boardsBtn").addEventListener("click", openBoardPanel);
+        document.getElementById("closeBoardPanelBtn").addEventListener("click", closeBoardPanel);
+        document.getElementById("boardPanelBackdrop").addEventListener("click", closeBoardPanel);
+        document.getElementById("boardList").addEventListener("click", handleBoardListClick);
+        document.getElementById("newBoardBtn").addEventListener("click", function () {
+            createBoard().then(function (board) {
+                return switchToBoard(board.id);
+            }).then(function () {
+                addNote();
+                closeBoardPanel();
+            });
+        });
 
         document.getElementById("addNoteBtn").addEventListener("click", addNote);
         document.getElementById("connectBtn").addEventListener("click", toggleConnectMode);
@@ -1466,22 +1899,27 @@
         });
 
         openDB().then(function () {
-            return Promise.all([dbGetAll(NOTES_STORE), dbGetAll(CONNS_STORE), loadViewport()]);
-        }).then(function (results) {
-            notes = results[0].map(function (n) {
-                if (!n.w) n.w = NOTE_WIDTH;
-                if (!n.h) n.h = NOTE_HEIGHT;
-                return n;
-            });
-            connections = results[1];
-            for (var i = 0; i < notes.length; i++) {
-                var ci = NOTE_COLORS.findIndex(function (c) {
-                    return c.fill === notes[i].color.fill;
+            return loadBoards();
+        }).then(function () {
+            if (boards.length === 0) {
+                return createBoard("My Board").then(function (board) {
+                    return board.id;
                 });
-                if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
             }
+            var lastBoardId = null;
+            try { lastBoardId = localStorage.getItem(CURRENT_BOARD_KEY); } catch (e) { /* ignore */ }
+            if (lastBoardId && boards.some(function (b) { return b.id === lastBoardId; })) {
+                return lastBoardId;
+            }
+            return boards[0].id;
+        }).then(function (boardId) {
+            currentBoardId = boardId;
+            try { localStorage.setItem(CURRENT_BOARD_KEY, boardId); } catch (e) { /* ignore */ }
+            return loadBoardData(boardId);
+        }).then(function () {
             render();
-            console.log("MindMap initialized — " + notes.length + " notes, " + connections.length + " connections");
+            updateBoardNameDisplay();
+            console.log("MindMap initialized — " + boards.length + " board(s), current: " + notes.length + " notes, " + connections.length + " connections");
             loadSharedState();
         }).catch(function (err) {
             console.error("IndexedDB init failed:", err);
