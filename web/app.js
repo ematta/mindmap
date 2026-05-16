@@ -39,6 +39,11 @@
         noteIdx: -1
     };
 
+    var headerEditState = {
+        active: false,
+        noteIdx: -1
+    };
+
     var connectState = {
         active: false,
         sourceId: null
@@ -142,6 +147,7 @@
             y: y,
             w: NOTE_WIDTH,
             h: NOTE_HEIGHT,
+            header: "Idea",
             text: "",
             color: color,
             id: Date.now() + "-" + Math.random().toString(36).substr(2, 6)
@@ -308,7 +314,7 @@
         ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
         ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText("IDEA", x + 12, y + 10);
+        ctx.fillText((note.header || "Idea").toUpperCase(), x + 12, y + 10);
 
         var closeX = x + w - 24;
         var closeY = y + 6;
@@ -525,6 +531,74 @@
         render();
     }
 
+    function showHeaderInput(noteIdx) {
+        hideHeaderInput();
+        var note = notes[noteIdx];
+        var input = document.createElement("input");
+        input.type = "text";
+        input.id = "headerInput";
+        input.style.position = "fixed";
+        var sx = note.x * zoomLevel + panX;
+        var sy = note.y * zoomLevel + panY;
+        input.style.left = (sx + 10 * zoomLevel) + "px";
+        input.style.top = (sy + 5 * zoomLevel) + "px";
+        input.style.width = ((note.w - 50) * zoomLevel) + "px";
+        input.style.height = (20 * zoomLevel) + "px";
+        input.style.border = "none";
+        input.style.outline = "none";
+        input.style.background = "rgba(255,255,255,0.6)";
+        input.style.fontFamily = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        input.style.fontSize = (11 * zoomLevel) + "px";
+        input.style.color = "#333";
+        input.style.padding = (2 * zoomLevel) + "px " + (2 * zoomLevel) + "px";
+        input.style.zIndex = "20";
+        input.style.borderRadius = (3 * zoomLevel) + "px";
+        input.value = note.header || "Idea";
+
+        var idx = noteIdx;
+        input.addEventListener("blur", function () {
+            commitHeaderInput(idx);
+        });
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "Escape" || e.key === "Enter") {
+                e.preventDefault();
+                input.blur();
+            }
+        });
+
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+        headerEditState.active = true;
+        headerEditState.noteIdx = idx;
+    }
+
+    function hideHeaderInput() {
+        var el = document.getElementById("headerInput");
+        if (el) el.remove();
+        headerEditState.active = false;
+        headerEditState.noteIdx = -1;
+    }
+
+    function commitHeaderInput(idx) {
+        var el = document.getElementById("headerInput");
+        if (el && notes[idx]) {
+            var val = el.value.trim();
+            if (val) {
+                notes[idx].header = val;
+            } else {
+                notes[idx].header = "Idea";
+            }
+            saveNote(notes[idx]);
+        }
+        hideHeaderInput();
+        render();
+    }
+
+    function isHeaderArea(mx, my, note) {
+        return mx >= note.x && mx <= note.x + note.w && my >= note.y && my <= note.y + 28;
+    }
+
     function getMousePos(e) {
         var rect = canvas.getBoundingClientRect();
         var screenX = e.clientX - rect.left;
@@ -721,6 +795,11 @@
                 render();
             }
 
+            if (headerEditState.active) {
+                hideHeaderInput();
+                render();
+            }
+
             var pos = getMousePos(e);
             var idx = hitTest(pos.x, pos.y);
 
@@ -757,6 +836,16 @@
                 notes.splice(idx, 1);
                 deleteNote(deletedId);
                 render();
+                return;
+            }
+
+            if (isHeaderArea(pos.x, pos.y, notes[idx])) {
+                e.preventDefault();
+                idx = bringToFront(idx);
+                var hdrIdx = idx;
+                setTimeout(function () {
+                    showHeaderInput(hdrIdx);
+                }, 0);
                 return;
             }
 
