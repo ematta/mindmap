@@ -488,9 +488,86 @@
     }
 
     function hideContextMenu() {
-        var menu = document.getElementById("contextMenu");
-        menu.classList.remove("visible");
+        document.getElementById("contextMenu").classList.remove("visible");
+        document.getElementById("canvasMenu").classList.remove("visible");
         contextMenuState.noteIdx = -1;
+    }
+
+    function showCanvasMenu(e) {
+        e.preventDefault();
+        hideContextMenu();
+        var menu = document.getElementById("canvasMenu");
+        menu.style.left = e.clientX + "px";
+        menu.style.top = e.clientY + "px";
+        menu.classList.add("visible");
+
+        requestAnimationFrame(function () {
+            var rect = menu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                menu.style.left = (e.clientX - rect.width) + "px";
+            }
+            if (rect.bottom > window.innerHeight) {
+                menu.style.top = (e.clientY - rect.height) + "px";
+            }
+        });
+    }
+
+    function exportState() {
+        var data = {
+            notes: notes,
+            connections: connections
+        };
+        var json = JSON.stringify(data, null, 2);
+        var blob = new Blob([json], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "mindmap-" + new Date().toISOString().slice(0, 10) + ".json";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+
+    function importState() {
+        var input = document.getElementById("importInput");
+        input.value = "";
+        input.onchange = function () {
+            var file = input.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (ev) {
+                try {
+                    var data = JSON.parse(ev.target.result);
+                    if (!data.notes || !data.connections) {
+                        alert("Invalid mindmap file.");
+                        return;
+                    }
+                    notes = data.notes;
+                    connections = data.connections;
+                    COLOR_CYCLE = 0;
+                    for (var i = 0; i < notes.length; i++) {
+                        var ci = NOTE_COLORS.findIndex(function (c) {
+                            return c.fill === notes[i].color.fill;
+                        });
+                        if (ci >= COLOR_CYCLE) COLOR_CYCLE = ci + 1;
+                    }
+                    var clearNotes = db.transaction(NOTES_STORE, "readwrite").objectStore(NOTES_STORE).clear();
+                    var clearConns = db.transaction(CONNS_STORE, "readwrite").objectStore(CONNS_STORE).clear();
+                    clearNotes.onsuccess = function () {
+                        for (var i = 0; i < notes.length; i++) saveNote(notes[i]);
+                    };
+                    clearConns.onsuccess = function () {
+                        for (var i = 0; i < connections.length; i++) saveConnection(connections[i]);
+                    };
+                    render();
+                } catch (err) {
+                    alert("Failed to parse file: " + err.message);
+                }
+            };
+            reader.readAsText(file);
+        };
+        input.click();
     }
 
     function showContextMenu(e, noteIdx) {
@@ -635,13 +712,14 @@
             if (idx >= 0) {
                 showContextMenu(e, idx);
             } else {
-                hideContextMenu();
+                showCanvasMenu(e);
             }
         });
 
         document.addEventListener("click", function (e) {
             var menu = document.getElementById("contextMenu");
-            if (!menu.contains(e.target)) {
+            var canvasMenu = document.getElementById("canvasMenu");
+            if (!menu.contains(e.target) && !canvasMenu.contains(e.target)) {
                 hideContextMenu();
             }
         });
@@ -681,6 +759,22 @@
                 notes.splice(delIdx, 1);
                 deleteNote(deletedId);
                 render();
+            }
+
+            hideContextMenu();
+        });
+
+        document.getElementById("canvasMenu").addEventListener("click", function (e) {
+            var item = e.target.closest(".context-menu-item");
+            if (!item) return;
+            var action = item.getAttribute("data-action");
+
+            if (action === "export") {
+                exportState();
+            }
+
+            if (action === "import") {
+                importState();
             }
 
             hideContextMenu();

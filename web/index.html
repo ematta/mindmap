@@ -32,6 +32,15 @@
                 <span class="context-menu-icon">&#x2715;</span> Delete Idea
             </div>
         </div>
+        <div id="canvasMenu" class="context-menu">
+            <div class="context-menu-item" data-action="export">
+                <span class="context-menu-icon">&#x2913;</span> Export State
+            </div>
+            <div class="context-menu-item" data-action="import">
+                <span class="context-menu-icon">&#x2912;</span> Import State
+            </div>
+        </div>
+        <input type="file" id="importInput" accept=".json" style="display:none" />
         <canvas id="canvas"></canvas>
         <script src="app.js"></script>
     </body>
