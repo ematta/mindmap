@@ -889,6 +889,8 @@
             var idx = hitTest(pos.x, pos.y);
             if (idx >= 0) {
                 showInput(idx);
+            } else {
+                addNoteAt(pos.x, pos.y);
             }
         });
 
