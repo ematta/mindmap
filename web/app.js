@@ -17,6 +17,9 @@
         { fill: "#ffe0b3", stroke: "#e6a34d" }
     ];
     var COLOR_CYCLE = 0;
+    var MIN_ZOOM = 0.33;
+    var MAX_ZOOM = 2.0;
+    var ZOOM_STEP = 1.15;
 
     var db = null;
     var notes = [];
@@ -44,6 +47,10 @@
     var contextMenuState = {
         noteIdx: -1
     };
+
+    var zoomLevel = 1.0;
+    var panX = 0;
+    var panY = 0;
 
     function openDB() {
         return new Promise(function (resolve, reject) {
@@ -216,9 +223,19 @@
 
     function drawDotGrid() {
         var spacing = 30;
+        var screenW = canvas.width / dpr;
+        var screenH = canvas.height / dpr;
+        var worldLeft = -panX / zoomLevel;
+        var worldTop = -panY / zoomLevel;
+        var worldRight = (screenW - panX) / zoomLevel;
+        var worldBottom = (screenH - panY) / zoomLevel;
+        var startX = Math.floor(worldLeft / spacing) * spacing;
+        var startY = Math.floor(worldTop / spacing) * spacing;
+        var endX = Math.ceil(worldRight / spacing) * spacing;
+        var endY = Math.ceil(worldBottom / spacing) * spacing;
         ctx.fillStyle = "#c8c8c8";
-        for (var gx = 0; gx < canvas.width / dpr; gx += spacing) {
-            for (var gy = TOOLBAR_HEIGHT; gy < canvas.height / dpr; gy += spacing) {
+        for (var gx = startX; gx <= endX; gx += spacing) {
+            for (var gy = startY; gy <= endY; gy += spacing) {
                 ctx.beginPath();
                 ctx.arc(gx, gy, 1, 0, Math.PI * 2);
                 ctx.fill();
@@ -342,6 +359,9 @@
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
 
+        ctx.translate(panX, panY);
+        ctx.scale(zoomLevel, zoomLevel);
+
         drawDotGrid();
 
         for (var ci = 0; ci < connections.length; ci++) {
@@ -355,6 +375,41 @@
         }
 
         ctx.restore();
+
+        updateZoomLabel();
+    }
+
+    function updateZoomLabel() {
+        var label = document.getElementById("zoomLabel");
+        if (label) label.textContent = Math.round(zoomLevel * 100) + "%";
+    }
+
+    function zoomAtPoint(cx, cy, factor) {
+        var oldZoom = zoomLevel;
+        var newZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoomLevel * factor));
+        panX = cx - (cx - panX) * (newZoom / oldZoom);
+        panY = cy - (cy - panY) * (newZoom / oldZoom);
+        zoomLevel = newZoom;
+        render();
+    }
+
+    function zoomIn() {
+        var cx = (canvas.width / dpr) / 2;
+        var cy = (canvas.height / dpr) / 2;
+        zoomAtPoint(cx, cy, ZOOM_STEP);
+    }
+
+    function zoomOut() {
+        var cx = (canvas.width / dpr) / 2;
+        var cy = (canvas.height / dpr) / 2;
+        zoomAtPoint(cx, cy, 1 / ZOOM_STEP);
+    }
+
+    function resetZoom() {
+        zoomLevel = 1.0;
+        panX = 0;
+        panY = 0;
+        render();
     }
 
     function hitTest(mx, my) {
@@ -412,20 +467,22 @@
         var input = document.createElement("textarea");
         input.id = "noteInput";
         input.style.position = "fixed";
-        input.style.left = (note.x + 10) + "px";
-        input.style.top = (note.y + 34) + "px";
-        input.style.width = (note.w - 22) + "px";
-        input.style.height = (note.h - 48) + "px";
+        var sx = note.x * zoomLevel + panX;
+        var sy = note.y * zoomLevel + panY;
+        input.style.left = (sx + 10 * zoomLevel) + "px";
+        input.style.top = (sy + 34 * zoomLevel) + "px";
+        input.style.width = ((note.w - 22) * zoomLevel) + "px";
+        input.style.height = ((note.h - 48) * zoomLevel) + "px";
         input.style.border = "none";
         input.style.outline = "none";
         input.style.background = "rgba(255,255,255,0.6)";
         input.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-        input.style.fontSize = "14px";
+        input.style.fontSize = (14 * zoomLevel) + "px";
         input.style.color = "#333";
         input.style.resize = "none";
-        input.style.padding = "4px";
+        input.style.padding = (4 * zoomLevel) + "px";
         input.style.zIndex = "20";
-        input.style.borderRadius = "4px";
+        input.style.borderRadius = (4 * zoomLevel) + "px";
         input.value = note.text;
 
         var idx = noteIdx;
@@ -468,18 +525,37 @@
 
     function getMousePos(e) {
         var rect = canvas.getBoundingClientRect();
+        var screenX = e.clientX - rect.left;
+        var screenY = e.clientY - rect.top;
         return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
+            x: (screenX - panX) / zoomLevel,
+            y: (screenY - panY) / zoomLevel
         };
     }
 
     function addNote() {
+        var screenW = canvas.width / dpr;
+        var screenH = canvas.height / dpr;
         var margin = 60;
-        var maxX = window.innerWidth - NOTE_WIDTH - margin;
-        var maxY = window.innerHeight - NOTE_HEIGHT - margin;
-        var rx = margin + Math.random() * (maxX - margin);
-        var ry = TOOLBAR_HEIGHT + 20 + Math.random() * (maxY - TOOLBAR_HEIGHT - 20);
+        var visL = (margin - panX) / zoomLevel;
+        var visT = (TOOLBAR_HEIGHT + 20 - panY) / zoomLevel;
+        var visR = (screenW - margin - panX) / zoomLevel;
+        var visB = (screenH - margin - panY) / zoomLevel;
+        var minX = visL;
+        var maxX = visR - NOTE_WIDTH;
+        var minY = visT;
+        var maxY = visB - NOTE_HEIGHT;
+        var rx, ry;
+        if (maxX <= minX) {
+            rx = minX;
+        } else {
+            rx = minX + Math.random() * (maxX - minX);
+        }
+        if (maxY <= minY) {
+            ry = minY;
+        } else {
+            ry = minY + Math.random() * (maxY - minY);
+        }
         var note = createNote(rx, ry);
         notes.push(note);
         saveNote(note);
@@ -598,6 +674,19 @@
 
         document.getElementById("addNoteBtn").addEventListener("click", addNote);
         document.getElementById("connectBtn").addEventListener("click", toggleConnectMode);
+
+        document.getElementById("zoomInBtn").addEventListener("click", zoomIn);
+        document.getElementById("zoomOutBtn").addEventListener("click", zoomOut);
+        document.getElementById("resetZoomBtn").addEventListener("click", resetZoom);
+
+        canvas.addEventListener("wheel", function (e) {
+            e.preventDefault();
+            var rect = canvas.getBoundingClientRect();
+            var cx = e.clientX - rect.left;
+            var cy = e.clientY - rect.top;
+            var factor = e.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+            zoomAtPoint(cx, cy, factor);
+        }, { passive: false });
 
         document.addEventListener("keydown", function (e) {
             if (e.key === "Escape" && connectState.active) {

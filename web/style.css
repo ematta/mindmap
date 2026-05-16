@@ -72,6 +72,41 @@ body {
     margin-left: 12px;
 }
 
+.zoom-controls {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    gap: 4px;
+}
+
+.zoom-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+    font-weight: 700;
+    background: #3d566e;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+    line-height: 1;
+}
+
+.zoom-btn:hover {
+    background: #4a6d8c;
+}
+
+#zoomLabel {
+    color: #bdc3c7;
+    font-size: 13px;
+    min-width: 42px;
+    text-align: center;
+}
+
 .context-menu {
     position: fixed;
     display: none;
