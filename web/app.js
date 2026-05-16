@@ -2,7 +2,7 @@
     "use strict";
 
     var DB_NAME = "mindmapdb";
-    var DB_VERSION = 2;
+    var DB_VERSION = 3;
     var NOTES_STORE = "notes";
     var CONNS_STORE = "connections";
     var TOOLBAR_HEIGHT = 48;
@@ -17,6 +17,8 @@
         { fill: "#ffe0b3", stroke: "#e6a34d" }
     ];
     var COLOR_CYCLE = 0;
+    var MIN_NOTE_WIDTH = 120;
+    var MIN_NOTE_HEIGHT = 80;
     var MIN_ZOOM = 0.33;
     var MAX_ZOOM = 2.0;
     var ZOOM_STEP = 1.15;
@@ -32,6 +34,15 @@
         noteIdx: -1,
         offsetX: 0,
         offsetY: 0
+    };
+
+    var resize = {
+        active: false,
+        noteIdx: -1,
+        startX: 0,
+        startY: 0,
+        startW: 0,
+        startH: 0
     };
 
     var editState = {
@@ -139,11 +150,28 @@
             var req = indexedDB.open(DB_NAME, DB_VERSION);
             req.onupgradeneeded = function (e) {
                 var database = e.target.result;
+                var oldVersion = e.oldVersion;
                 if (!database.objectStoreNames.contains(NOTES_STORE)) {
                     database.createObjectStore(NOTES_STORE, { keyPath: "id" });
                 }
                 if (!database.objectStoreNames.contains(CONNS_STORE)) {
                     database.createObjectStore(CONNS_STORE, { keyPath: "id" });
+                }
+                if (oldVersion < 3) {
+                    var tx = e.target.transaction;
+                    if (tx.objectStoreNames.contains(NOTES_STORE)) {
+                        var noteStore = tx.objectStore(NOTES_STORE);
+                        noteStore.openCursor().onsuccess = function (ev) {
+                            var cursor = ev.target.result;
+                            if (cursor) {
+                                var note = cursor.value;
+                                if (!note.w) note.w = NOTE_WIDTH;
+                                if (!note.h) note.h = NOTE_HEIGHT;
+                                cursor.update(note);
+                                cursor.continue();
+                            }
+                        };
+                    }
                 }
             };
             req.onsuccess = function (e) {
@@ -438,6 +466,15 @@
             ctx.setLineDash([]);
         }
 
+        // Resize handle
+        ctx.fillStyle = note.color.stroke;
+        ctx.beginPath();
+        ctx.moveTo(x + w - 10, y + h - 4);
+        ctx.lineTo(x + w - 4, y + h - 10);
+        ctx.lineTo(x + w - 4, y + h - 4);
+        ctx.closePath();
+        ctx.fill();
+
         ctx.restore();
     }
 
@@ -682,6 +719,14 @@
         return mx >= note.x && mx <= note.x + note.w && my >= note.y && my <= note.y + 28;
     }
 
+    function isResizeHandle(mx, my, note) {
+        var handleSize = 12;
+        return mx >= note.x + note.w - handleSize &&
+               mx <= note.x + note.w &&
+               my >= note.y + note.h - handleSize &&
+               my <= note.y + note.h;
+    }
+
     function getMousePos(e) {
         var rect = canvas.getBoundingClientRect();
         var screenX = e.clientX - rect.left;
@@ -789,7 +834,11 @@
                         alert("Invalid mindmap file.");
                         return;
                     }
-                    notes = data.notes;
+                    notes = data.notes.map(function (n) {
+                        if (!n.w) n.w = NOTE_WIDTH;
+                        if (!n.h) n.h = NOTE_HEIGHT;
+                        return n;
+                    });
                     connections = data.connections;
                     COLOR_CYCLE = 0;
                     for (var i = 0; i < notes.length; i++) {
@@ -923,6 +972,20 @@
 
             if (idx === -1) return;
 
+            if (isResizeHandle(pos.x, pos.y, notes[idx])) {
+                e.preventDefault();
+                idx = bringToFront(idx);
+                resize.active = true;
+                resize.noteIdx = idx;
+                resize.startX = pos.x;
+                resize.startY = pos.y;
+                resize.startW = notes[idx].w;
+                resize.startH = notes[idx].h;
+                canvas.style.cursor = "nwse-resize";
+                render();
+                return;
+            }
+
             if (isCloseBtn(pos.x, pos.y, notes[idx])) {
                 var deletedId = notes[idx].id;
                 deleteConnectionsForNote(deletedId);
@@ -954,13 +1017,22 @@
 
         canvas.addEventListener("mousemove", function (e) {
             var pos = getMousePos(e);
-            if (drag.active && notes[drag.noteIdx]) {
+            if (resize.active && notes[resize.noteIdx]) {
+                var note = notes[resize.noteIdx];
+                var newW = resize.startW + (pos.x - resize.startX);
+                var newH = resize.startH + (pos.y - resize.startY);
+                note.w = Math.max(MIN_NOTE_WIDTH, newW);
+                note.h = Math.max(MIN_NOTE_HEIGHT, newH);
+                render();
+            } else if (drag.active && notes[drag.noteIdx]) {
                 notes[drag.noteIdx].x = pos.x - drag.offsetX;
                 notes[drag.noteIdx].y = pos.y - drag.offsetY;
                 render();
             } else {
                 var idx = hitTest(pos.x, pos.y);
-                if (connectState.active) {
+                if (idx >= 0 && isResizeHandle(pos.x, pos.y, notes[idx])) {
+                    canvas.style.cursor = "nwse-resize";
+                } else if (connectState.active) {
                     canvas.style.cursor = idx >= 0 ? "crosshair" : "default";
                 } else {
                     canvas.style.cursor = idx >= 0 ? "grab" : "default";
@@ -969,7 +1041,11 @@
         });
 
         canvas.addEventListener("mouseup", function () {
-            if (drag.active) {
+            if (resize.active) {
+                saveNote(notes[resize.noteIdx]);
+                resize.active = false;
+                canvas.style.cursor = "default";
+            } else if (drag.active) {
                 saveNote(notes[drag.noteIdx]);
                 drag.active = false;
                 canvas.style.cursor = connectState.active ? "crosshair" : "default";
@@ -988,7 +1064,11 @@
         });
 
         canvas.addEventListener("mouseleave", function () {
-            if (drag.active) {
+            if (resize.active) {
+                saveNote(notes[resize.noteIdx]);
+                resize.active = false;
+                canvas.style.cursor = "default";
+            } else if (drag.active) {
                 saveNote(notes[drag.noteIdx]);
                 drag.active = false;
                 canvas.style.cursor = "default";
@@ -1094,7 +1174,11 @@
         openDB().then(function () {
             return Promise.all([dbGetAll(NOTES_STORE), dbGetAll(CONNS_STORE)]);
         }).then(function (results) {
-            notes = results[0];
+            notes = results[0].map(function (n) {
+                if (!n.w) n.w = NOTE_WIDTH;
+                if (!n.h) n.h = NOTE_HEIGHT;
+                return n;
+            });
             connections = results[1];
             for (var i = 0; i < notes.length; i++) {
                 var ci = NOTE_COLORS.findIndex(function (c) {
