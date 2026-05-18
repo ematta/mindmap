@@ -554,6 +554,7 @@
             notes = results[0].map(function (n) {
                 if (!n.w) n.w = NOTE_WIDTH;
                 if (!n.h) n.h = NOTE_HEIGHT;
+                if (!n.shape) n.shape = "rectangle";
                 return n;
             });
             connections = results[1];
@@ -581,6 +582,7 @@
             header: "Idea",
             text: "",
             color: color,
+            shape: "rectangle",
             boardId: currentBoardId,
             id: Date.now() + "-" + Math.random().toString(36).substr(2, 6)
         };
@@ -609,6 +611,7 @@
     /** Calculate the point on a note's bounding rectangle edge that faces
      *  towards (targetX, targetY). Used to anchor arrow endpoints. */
     function getEdgePoint(note, targetX, targetY) {
+        var shape = note.shape || "rectangle";
         var cx = note.x + note.w / 2;
         var cy = note.y + note.h / 2;
         var dx = targetX - cx;
@@ -617,6 +620,27 @@
         var hh = note.h / 2;
 
         if (dx === 0 && dy === 0) return { x: cx, y: cy };
+
+        if (shape === "circle") {
+            var t = 1 / Math.sqrt((dx * dx) / (hw * hw) + (dy * dy) / (hh * hh));
+            return { x: cx + dx * t, y: cy + dy * t };
+        }
+
+        if (shape === "pentagon" || shape === "star") {
+            var verts = getShapeVertices(note);
+            var closest = null;
+            var closestT = Infinity;
+            for (var i = 0; i < verts.length; i++) {
+                var j = (i + 1) % verts.length;
+                var inter = raySegmentIntersection(cx, cy, dx, dy, verts[i].x, verts[i].y, verts[j].x, verts[j].y);
+                if (inter && inter.t > 0 && inter.t < closestT) {
+                    closestT = inter.t;
+                    closest = inter;
+                }
+            }
+            if (closest) return { x: closest.x, y: closest.y };
+            return { x: cx, y: cy };
+        }
 
         var absDx = Math.abs(dx);
         var absDy = Math.abs(dy);
@@ -632,6 +656,61 @@
             x: cx + dx * scale,
             y: cy + dy * scale
         };
+    }
+
+    function getShapeVertices(note) {
+        var shape = note.shape || "rectangle";
+        var cx = note.x + note.w / 2;
+        var cy = note.y + note.h / 2;
+        var hw = note.w / 2;
+        var hh = note.h / 2;
+        var verts = [];
+
+        if (shape === "pentagon") {
+            for (var i = 0; i < 5; i++) {
+                var angle = -Math.PI / 2 + (2 * Math.PI * i / 5);
+                verts.push({
+                    x: cx + hw * Math.cos(angle),
+                    y: cy + hh * Math.sin(angle)
+                });
+            }
+        } else if (shape === "star") {
+            for (var i = 0; i < 10; i++) {
+                var angle = -Math.PI / 2 + (Math.PI * i / 5);
+                var r = (i % 2 === 0) ? 1.0 : 0.38;
+                verts.push({
+                    x: cx + hw * r * Math.cos(angle),
+                    y: cy + hh * r * Math.sin(angle)
+                });
+            }
+        }
+
+        return verts;
+    }
+
+    function raySegmentIntersection(ox, oy, dx, dy, x1, y1, x2, y2) {
+        var sx = x2 - x1;
+        var sy = y2 - y1;
+        var denom = dx * sy - dy * sx;
+        if (Math.abs(denom) < 1e-10) return null;
+        var t = ((x1 - ox) * sy - (y1 - oy) * sx) / denom;
+        var u = ((x1 - ox) * dy - (y1 - oy) * dx) / denom;
+        if (t > 0 && u >= 0 && u <= 1) {
+            return { x: ox + t * dx, y: oy + t * dy, t: t };
+        }
+        return null;
+    }
+
+    function pointInPolygon(px, py, verts) {
+        var inside = false;
+        for (var i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+            var xi = verts[i].x, yi = verts[i].y;
+            var xj = verts[j].x, yj = verts[j].y;
+            if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+                inside = !inside;
+            }
+        }
+        return inside;
     }
 
     /* ── Canvas Drawing Functions ────────────────────────────────── */
@@ -718,6 +797,56 @@
         return lines;
     }
 
+    function drawShapePath(note) {
+        var shape = note.shape || "rectangle";
+        var x = note.x;
+        var y = note.y;
+        var w = note.w;
+        var h = note.h;
+        var cx = x + w / 2;
+        var cy = y + h / 2;
+
+        if (shape === "circle") {
+            ctx.beginPath();
+            ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+            ctx.closePath();
+        } else if (shape === "pentagon") {
+            ctx.beginPath();
+            for (var i = 0; i < 5; i++) {
+                var angle = -Math.PI / 2 + (2 * Math.PI * i / 5);
+                var px = cx + (w / 2) * Math.cos(angle);
+                var py = cy + (h / 2) * Math.sin(angle);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+        } else if (shape === "star") {
+            ctx.beginPath();
+            for (var i = 0; i < 10; i++) {
+                var angle = -Math.PI / 2 + (Math.PI * i / 5);
+                var r = (i % 2 === 0) ? 1.0 : 0.38;
+                var px = cx + (w / 2) * r * Math.cos(angle);
+                var py = cy + (h / 2) * r * Math.sin(angle);
+                if (i === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+        } else {
+            var r = 6;
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.arcTo(x + w, y, x + w, y + r, r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+            ctx.lineTo(x + r, y + h);
+            ctx.arcTo(x, y + h, x, y + h - r, r);
+            ctx.lineTo(x, y + r);
+            ctx.arcTo(x, y, x + r, y, r);
+            ctx.closePath();
+        }
+    }
+
     /** Draw a single note card on the canvas.
      *  Renders: rounded rect with shadow, header, separator, body text,
      *  close button (×), resize handle (triangle), and edit/connect indicators. */
@@ -727,6 +856,7 @@
         var w = note.w;
         var h = note.h;
         var colors = getThemeColors();
+        var shape = note.shape || "rectangle";
 
         ctx.save();
 
@@ -739,18 +869,7 @@
         ctx.strokeStyle = note.color.stroke;
         ctx.lineWidth = 2;
 
-        var r = 6;
-        ctx.beginPath();
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + w - r, y);
-        ctx.arcTo(x + w, y, x + w, y + r, r);
-        ctx.lineTo(x + w, y + h - r);
-        ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-        ctx.lineTo(x + r, y + h);
-        ctx.arcTo(x, y + h, x, y + h - r, r);
-        ctx.lineTo(x, y + r);
-        ctx.arcTo(x, y, x + r, y, r);
-        ctx.closePath();
+        drawShapePath(note);
         ctx.fill();
         ctx.stroke();
 
@@ -760,48 +879,83 @@
             ctx.strokeStyle = colors.connectBorder;
             ctx.lineWidth = 3;
             ctx.setLineDash([6, 3]);
-            ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+            drawShapePath(note);
+            ctx.stroke();
             ctx.setLineDash([]);
         }
 
         ctx.fillStyle = note.color.stroke;
         ctx.font = "bold 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-        ctx.textAlign = "left";
         ctx.textBaseline = "top";
-        ctx.fillText((note.header || "Idea").toUpperCase(), x + 12, y + 10);
+
+        var isCentered = shape !== "rectangle";
+        var cx = x + w / 2;
+        var headerY = isCentered ? y + h * 0.12 : y + 10;
+
+        if (isCentered) {
+            ctx.textAlign = "center";
+            ctx.fillText((note.header || "Idea").toUpperCase(), cx, headerY);
+        } else {
+            ctx.textAlign = "left";
+            ctx.fillText((note.header || "Idea").toUpperCase(), x + 12, y + 10);
+        }
 
         var closeX = x + w - 24;
         var closeY = y + 6;
         ctx.fillStyle = "rgba(0,0,0,0.25)";
         ctx.font = "bold 14px sans-serif";
+        if (isCentered) {
+            ctx.textAlign = "center";
+        }
         ctx.fillText("\u00D7", closeX, closeY);
 
         ctx.strokeStyle = note.color.stroke;
         ctx.lineWidth = 0.5;
         ctx.beginPath();
-        ctx.moveTo(x + 10, y + 28);
-        ctx.lineTo(x + w - 10, y + 28);
+        if (isCentered) {
+            var sepHalfW = w * 0.25;
+            var sepY = headerY + 18;
+            ctx.moveTo(cx - sepHalfW, sepY);
+            ctx.lineTo(cx + sepHalfW, sepY);
+        } else {
+            ctx.moveTo(x + 10, y + 28);
+            ctx.lineTo(x + w - 10, y + 28);
+        }
         ctx.stroke();
 
-        ctx.fillStyle = "#333";
         ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-        ctx.textAlign = "left";
         ctx.textBaseline = "top";
 
         if (!(editState.active && editState.noteIdx === idx)) {
             var text = note.text || "Click to edit...";
             ctx.fillStyle = note.text ? colors.noteText : colors.notePlaceholder;
-            var maxW = w - 24;
+            var textAreaY = isCentered ? (headerY + 24) : (y + 36);
+            var textAreaH = isCentered ? (h - (textAreaY - y) - h * 0.1) : (h - 48);
+            var maxW = isCentered ? w * 0.65 : w - 24;
             var lines = wrapText(text, maxW);
             var lineH = 20;
-            var ty = y + 36;
-            var maxLines = Math.floor((h - 48) / lineH);
-            for (var li = 0; li < Math.min(lines.length, maxLines); li++) {
-                ctx.fillText(lines[li], x + 12, ty + li * lineH);
-            }
-            if (lines.length > maxLines) {
-                ctx.fillStyle = colors.notePlaceholder;
-                ctx.fillText("...", x + 12, ty + maxLines * lineH);
+            var maxLines = Math.floor(textAreaH / lineH);
+            if (isCentered) {
+                ctx.textAlign = "center";
+                var totalTextH = Math.min(lines.length, maxLines) * lineH;
+                var startY = textAreaY + (textAreaH - totalTextH) / 2;
+                for (var li = 0; li < Math.min(lines.length, maxLines); li++) {
+                    ctx.fillText(lines[li], cx, startY + li * lineH);
+                }
+                if (lines.length > maxLines) {
+                    ctx.fillStyle = colors.notePlaceholder;
+                    ctx.fillText("...", cx, startY + maxLines * lineH);
+                }
+            } else {
+                ctx.textAlign = "left";
+                var ty = textAreaY;
+                for (var li = 0; li < Math.min(lines.length, maxLines); li++) {
+                    ctx.fillText(lines[li], x + 12, ty + li * lineH);
+                }
+                if (lines.length > maxLines) {
+                    ctx.fillStyle = colors.notePlaceholder;
+                    ctx.fillText("...", x + 12, ty + maxLines * lineH);
+                }
             }
         }
 
@@ -809,7 +963,8 @@
             ctx.strokeStyle = colors.editBorder;
             ctx.lineWidth = 2.5;
             ctx.setLineDash([5, 3]);
-            ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+            drawShapePath(note);
+            ctx.stroke();
             ctx.setLineDash([]);
         }
 
@@ -910,9 +1065,20 @@
     function hitTest(mx, my) {
         for (var i = notes.length - 1; i >= 0; i--) {
             var n = notes[i];
-            if (mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h) {
-                return i;
+            var shape = n.shape || "rectangle";
+            var hit = false;
+            if (shape === "circle") {
+                var cx = n.x + n.w / 2;
+                var cy = n.y + n.h / 2;
+                var hw = n.w / 2;
+                var hh = n.h / 2;
+                hit = ((mx - cx) * (mx - cx)) / (hw * hw) + ((my - cy) * (my - cy)) / (hh * hh) <= 1;
+            } else if (shape === "pentagon" || shape === "star") {
+                hit = pointInPolygon(mx, my, getShapeVertices(n));
+            } else {
+                hit = mx >= n.x && mx <= n.x + n.w && my >= n.y && my <= n.y + n.h;
             }
+            if (hit) return i;
         }
         return -1;
     }
@@ -1328,6 +1494,7 @@
                 notes = data.notes.map(function (n) {
                     if (!n.w) n.w = NOTE_WIDTH;
                     if (!n.h) n.h = NOTE_HEIGHT;
+                    if (!n.shape) n.shape = "rectangle";
                     n.boardId = board.id;
                     return n;
                 });
@@ -1423,6 +1590,7 @@
                         notes = data.notes.map(function (n) {
                             if (!n.w) n.w = NOTE_WIDTH;
                             if (!n.h) n.h = NOTE_HEIGHT;
+                            if (!n.shape) n.shape = "rectangle";
                             n.boardId = board.id;
                             return n;
                         });
@@ -1973,6 +2141,18 @@
                 var colorIdx = parseInt(colorOpt.getAttribute("data-color"), 10);
                 if (contextMenuState.noteIdx >= 0 && notes[contextMenuState.noteIdx]) {
                     notes[contextMenuState.noteIdx].color = NOTE_COLORS[colorIdx];
+                    saveNote(notes[contextMenuState.noteIdx]);
+                    render();
+                }
+                hideContextMenu();
+                return;
+            }
+
+            var shapeOpt = target.closest(".context-shape-option");
+            if (shapeOpt) {
+                var shapeVal = shapeOpt.getAttribute("data-shape");
+                if (contextMenuState.noteIdx >= 0 && notes[contextMenuState.noteIdx]) {
+                    notes[contextMenuState.noteIdx].shape = shapeVal;
                     saveNote(notes[contextMenuState.noteIdx]);
                     render();
                 }

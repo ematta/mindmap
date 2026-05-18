@@ -505,6 +505,29 @@ body {
     font-weight: 600;
 }
 
+.context-shape-submenu {
+    grid-template-columns: 1fr;
+    min-width: 140px;
+}
+
+.context-shape-option {
+    padding: 8px 14px;
+    cursor: pointer;
+    border-radius: 6px;
+    white-space: nowrap;
+    font-size: 13px;
+    color: #333;
+}
+
+.context-shape-option:hover {
+    background: #f0f0f0;
+}
+
+.context-shape-option.active {
+    background: #e8f4fd;
+    font-weight: 600;
+}
+
 /* Context menu dark mode */
 [data-theme="dark"] .context-menu {
     background: #2a2a3a;
@@ -545,6 +568,18 @@ body {
 }
 
 [data-theme="dark"] .context-theme-option.active {
+    background: #1a3a5a;
+}
+
+[data-theme="dark"] .context-shape-option {
+    color: #ddd;
+}
+
+[data-theme="dark"] .context-shape-option:hover {
+    background: #3a3a4a;
+}
+
+[data-theme="dark"] .context-shape-option.active {
     background: #1a3a5a;
 }
 

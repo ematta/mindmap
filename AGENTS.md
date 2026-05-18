@@ -22,6 +22,7 @@
 - **Pannable/zoomable canvas**: Left-click and drag on empty canvas to pan around. Scroll to zoom (centered on cursor). Pan position and zoom level persist per board in IndexedDB (via `viewport` object store keyed by boardId) and are included in JSON export/import and shared links.
 - **Dark mode**: System/light/dark theme toggle persisted in localStorage. Canvas colors use `THEME_COLORS` object; HTML elements use `[data-theme="dark"]` CSS selectors.
 - **Import/Export**: Download board as JSON or import a JSON file as a new board.
+- **Note shapes**: Right-click a note → "Shape" submenu to change between rectangle (default), circle, pentagon, and star. Shape is stored per-note in the `shape` field, persisted in IndexedDB, and included in JSON export/import and shared links. Connection arrows attach to the actual shape boundary (ellipse for circles, polygon edges for pentagon/star). Hit testing uses shape-accurate collision (ellipse math for circles, point-in-polygon for pentagon/star).
 
 ## Architecture
 
@@ -35,7 +36,7 @@ All state lives in closure-scoped variables. The single `<canvas>` element uses 
 
 | Store | Key | Key Fields | Indexed By |
 |-------|-----|------------|------------|
-| `notes` | `id` | `x`, `y`, `w`, `h`, `header`, `text`, `color`, `boardId` | `boardId` |
+| `notes` | `id` | `x`, `y`, `w`, `h`, `header`, `text`, `color`, `shape`, `boardId` | `boardId` |
 | `connections` | `id` (`"fromId->toId"`) | `from`, `to`, `boardId` | `boardId` |
 | `viewport` | board ID | `panX`, `panY`, `zoomLevel` | — |
 | `boards` | `id` | `name`, `createdAt`, `updatedAt` | — |
