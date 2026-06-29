@@ -5,7 +5,7 @@
 ```
 ├── web/
 │   ├── index.html   # SPA entry — toolbar, menus, board panel, canvas element
-│   ├── app.js       # All logic in a single IIFE (~1900 lines, no modules)
+│   ├── app.js       # All logic in a single IIFE (~2400 lines, no modules)
 │   └── style.css    # Light/dark themes via [data-theme] attribute selectors
 ├── Dockerfile        # Production: nginx:alpine, non-root, port 8080
 ├── docker-compose.yml
@@ -18,6 +18,8 @@
 - **Multi-board support**: Create, rename, switch between, and delete multiple idea boards. Each board has its own isolated notes, connections, and viewport. Boards are listed in a slide-out panel accessible from the toolbar. Board names default to a random adjective+noun pair if not named. The current board is persisted in localStorage and restored on reload. IndexedDB uses a `boards` object store and a `boardId` index on notes/connections for per-board data isolation.
 - **Resizable cards**: Drag the bottom-right corner handle to resize notes. Minimum size is 120x80px. Sizes persist in IndexedDB and are included in JSON export/import.
 - **Deletable connections**: Right-click on a connection line to delete it. Connections show a pointer cursor on hover.
+- **Drag-to-connect via edge handles**: Hover over a card to reveal 4 edge handles (small dots at cardinal bounding-box midpoints). Drag from any handle to another card to create a connection. A dashed preview arrow follows the cursor during drag. Connections are created with duplicate and self-connection checks. The existing right-click "Connect To..." method remains available.
+- **High-contrast connection lines**: Connection arrows use a 3px width with adaptive contrast colors — near-black (`#222`) on light backgrounds and white (`#ffffff`) on dark backgrounds.
 - **Share via link**: Right-click canvas → "Share Link" encodes the board state (board name, notes, connections, and viewport position/zoom) as base64 in the URL hash and copies the link to clipboard. Opening a shared link adds it as a new board to the recipient's board list (with confirmation). Works entirely client-side with no backend. Limited to ~65KB.
 - **Pannable/zoomable canvas**: Left-click and drag on empty canvas to pan around. Scroll to zoom (centered on cursor). Pan position and zoom level persist per board in IndexedDB (via `viewport` object store keyed by boardId) and are included in JSON export/import and shared links.
 - **Dark mode**: System/light/dark theme toggle persisted in localStorage. Canvas colors use `THEME_COLORS` object; HTML elements use `[data-theme="dark"]` CSS selectors.
@@ -50,7 +52,7 @@ All note positions/sizes stored in world coords. Canvas transform handles mappin
 
 ### Interaction State
 
-Flat state objects (mutually exclusive in practice): `drag`, `resize`, `pan`, `editState`, `headerEditState`, `connectState`, `contextMenuState`, `connectionMenuState`.
+Flat state objects (mutually exclusive in practice): `drag`, `resize`, `pan`, `editState`, `headerEditState`, `connectState`, `dragConnect`, `contextMenuState`, `connectionMenuState`.
 
 ### Theme System
 

@@ -118,6 +118,17 @@
         connIdx: -1
     };
 
+    var dragConnect = {
+        active: false,
+        sourceId: null,
+        handleX: 0,
+        handleY: 0,
+        currentX: 0,
+        currentY: 0
+    };
+
+    var hoveredNoteIdx = -1;
+
     var contextMenuPos = { x: 0, y: 0 }; // world coords where context menu was opened
 
     /* ── Viewport State (pan & zoom) ─────────────────────────────── */
@@ -145,8 +156,8 @@
         light: {
             background: "#e8e8e8",
             gridDot: "#c8c8c8",
-            arrowStroke: "#555",
-            arrowFill: "#555",
+            arrowStroke: "#222",
+            arrowFill: "#222",
             noteText: "#333",
             notePlaceholder: "#999",
             editBorder: "#2c3e50",
@@ -155,8 +166,8 @@
         dark: {
             background: "#1a1a2e",
             gridDot: "#333355",
-            arrowStroke: "#aaa",
-            arrowFill: "#aaa",
+            arrowStroke: "#ffffff",
+            arrowFill: "#ffffff",
             noteText: "#333",
             notePlaceholder: "#999",
             editBorder: "#6c8ebf",
@@ -735,7 +746,7 @@
 
         ctx.strokeStyle = colors.arrowStroke;
         ctx.fillStyle = colors.arrowFill;
-        ctx.lineWidth = 2;
+        ctx.lineWidth = 3;
         ctx.lineJoin = "round";
 
         ctx.beginPath();
@@ -1006,6 +1017,33 @@
 
         for (var i = 0; i < notes.length; i++) {
             drawNote(notes[i], i);
+        }
+
+        if (dragConnect.active) {
+            var angle = Math.atan2(dragConnect.currentY - dragConnect.handleY, dragConnect.currentX - dragConnect.handleX);
+            var headLen = 14;
+            ctx.save();
+            ctx.strokeStyle = colors.arrowStroke;
+            ctx.fillStyle = colors.arrowFill;
+            ctx.lineWidth = 3;
+            ctx.lineJoin = "round";
+            ctx.setLineDash([8, 4]);
+            ctx.globalAlpha = 0.7;
+            ctx.beginPath();
+            ctx.moveTo(dragConnect.handleX, dragConnect.handleY);
+            ctx.lineTo(dragConnect.currentX, dragConnect.currentY);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(dragConnect.currentX, dragConnect.currentY);
+            ctx.lineTo(dragConnect.currentX - headLen * Math.cos(angle - Math.PI / 7), dragConnect.currentY - headLen * Math.sin(angle - Math.PI / 7));
+            ctx.lineTo(dragConnect.currentX - headLen * Math.cos(angle + Math.PI / 7), dragConnect.currentY - headLen * Math.sin(angle + Math.PI / 7));
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        if (hoveredNoteIdx >= 0 && !dragConnect.active && !connectState.active && !editState.active && !headerEditState.active) {
+            drawEdgeHandles(notes[hoveredNoteIdx]);
         }
 
         ctx.restore();
@@ -1291,6 +1329,50 @@
                mx <= note.x + note.w &&
                my >= note.y + note.h - handleSize &&
                my <= note.y + note.h;
+    }
+
+    /** Get the 4 cardinal bounding-box midpoint positions for drag-to-connect handles */
+    function getEdgeHandles(note) {
+        var cx = note.x + note.w / 2;
+        var cy = note.y + note.h / 2;
+        return [
+            { x: cx, y: note.y },
+            { x: note.x + note.w, y: cy },
+            { x: cx, y: note.y + note.h },
+            { x: note.x, y: cy }
+        ];
+    }
+
+    /** Returns the {x,y} of the nearest edge handle within scaled hit radius, or null */
+    function isEdgeHandle(mx, my, note) {
+        var handles = getEdgeHandles(note);
+        var radius = 10 / zoomLevel;
+        for (var i = 0; i < handles.length; i++) {
+            var dx = mx - handles[i].x;
+            var dy = my - handles[i].y;
+            if (dx * dx + dy * dy <= radius * radius) {
+                return handles[i];
+            }
+        }
+        return null;
+    }
+
+    /** Draw the 4 edge handle dots on a note (for hover feedback) */
+    function drawEdgeHandles(note) {
+        var handles = getEdgeHandles(note);
+        var colors = getThemeColors();
+        var radius = 6 / zoomLevel;
+        ctx.save();
+        for (var i = 0; i < handles.length; i++) {
+            ctx.beginPath();
+            ctx.arc(handles[i].x, handles[i].y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = colors.arrowStroke;
+            ctx.fill();
+            ctx.strokeStyle = colors.background;
+            ctx.lineWidth = 1.5 / zoomLevel;
+            ctx.stroke();
+        }
+        ctx.restore();
     }
 
     /** Convert mouse event screen coords to world coords (accounting for pan & zoom) */
@@ -1926,8 +2008,13 @@
         }, { passive: false });
 
         document.addEventListener("keydown", function (e) {
-            if (e.key === "Escape" && connectState.active) {
-                toggleConnectMode();
+            if (e.key === "Escape") {
+                if (connectState.active) toggleConnectMode();
+                if (dragConnect.active) {
+                    dragConnect.active = false;
+                    dragConnect.sourceId = null;
+                    render();
+                }
             }
         });
 
@@ -1972,6 +2059,22 @@
                     render();
                 }
                 return;
+            }
+
+            if (idx >= 0) {
+                var handlePos = isEdgeHandle(pos.x, pos.y, notes[idx]);
+                if (handlePos) {
+                    e.preventDefault();
+                    dragConnect.active = true;
+                    dragConnect.sourceId = notes[idx].id;
+                    dragConnect.handleX = handlePos.x;
+                    dragConnect.handleY = handlePos.y;
+                    dragConnect.currentX = pos.x;
+                    dragConnect.currentY = pos.y;
+                    canvas.style.cursor = "crosshair";
+                    render();
+                    return;
+                }
             }
 
             if (idx === -1) {
@@ -2044,12 +2147,18 @@
                 notes[drag.noteIdx].x = pos.x - drag.offsetX;
                 notes[drag.noteIdx].y = pos.y - drag.offsetY;
                 render();
+            } else if (dragConnect.active) {
+                dragConnect.currentX = pos.x;
+                dragConnect.currentY = pos.y;
+                render();
             } else {
                 var idx = hitTest(pos.x, pos.y);
                 if (idx >= 0 && isResizeHandle(pos.x, pos.y, notes[idx])) {
                     canvas.style.cursor = "nwse-resize";
                 } else if (connectState.active) {
                     canvas.style.cursor = idx >= 0 ? "crosshair" : "default";
+                } else if (idx >= 0 && isEdgeHandle(pos.x, pos.y, notes[idx])) {
+                    canvas.style.cursor = "crosshair";
                 } else if (idx >= 0) {
                     canvas.style.cursor = "grab";
                 } else if (hitTestConnection(pos.x, pos.y) >= 0) {
@@ -2057,10 +2166,32 @@
                 } else {
                     canvas.style.cursor = "grab";
                 }
+                if (idx !== hoveredNoteIdx) {
+                    hoveredNoteIdx = idx;
+                    render();
+                }
             }
         });
 
-        canvas.addEventListener("mouseup", function () {
+        canvas.addEventListener("mouseup", function (e) {
+            if (dragConnect.active) {
+                var pos = getMousePos(e);
+                var targetIdx = hitTest(pos.x, pos.y);
+                if (targetIdx >= 0 && notes[targetIdx].id !== dragConnect.sourceId) {
+                    var existing = connections.some(function (c) {
+                        return c.from === dragConnect.sourceId && c.to === notes[targetIdx].id;
+                    });
+                    if (!existing) {
+                        var conn = createConnection(dragConnect.sourceId, notes[targetIdx].id);
+                        connections.push(conn);
+                        saveConnection(conn);
+                    }
+                }
+                dragConnect.active = false;
+                dragConnect.sourceId = null;
+                canvas.style.cursor = "default";
+                render();
+            }
             if (pan.active) {
                 pan.active = false;
                 canvas.style.cursor = "grab";

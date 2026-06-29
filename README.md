@@ -36,7 +36,7 @@ The container runs nginx on port 8080 serving the static assets with gzip, secur
 - **Shareable links** — Share a board via URL (base64-encoded state in the URL hash). Recipients get it added as a new board.
 - **Pannable/zoomable canvas** — Drag to pan, scroll to zoom. Viewport is saved per board in IndexedDB.
 - **Resizable cards** — Drag the bottom-right corner handle. Minimum 120×80px.
-- **Connections** — Link ideas with directional arrows. Right-click a line to delete it.
+- **Connections** — Link ideas with directional arrows (3px, high-contrast). Right-click a line to delete it. Drag from edge handles (4 dots on card edges on hover) to connect, or use right-click "Connect To...".
 - **Dark mode** — System, light, or dark theme (persisted in localStorage).
 - **Import/Export** — Save/load boards as JSON files.
 
@@ -98,7 +98,8 @@ The app uses flat state objects (not a formal state machine) to track which inte
 | `pan` | Canvas panning (mousedown on empty space) |
 | `editState` | Text body editing (textarea overlay) |
 | `headerEditState` | Header/title editing (input overlay) |
-| `connectState` | Connection creation mode (click source → click target) |
+| `connectState` | Connection creation mode (right-click source → click target) |
+| `dragConnect` | Drag-to-connect via edge handles |
 | `contextMenuState` | Which note the context menu is open on |
 | `connectionMenuState` | Which connection the context menu is open on |
 
@@ -173,7 +174,7 @@ Both import and share create a new board rather than overwriting the current one
 | Drag note | Click and drag the card body |
 | Resize note | Drag the bottom-right corner triangle |
 | Delete note | Click the × button, or right-click → "Delete Idea" |
-| Connect notes | Right-click → "Connect To..." then click the target note |
+| Connect notes | Right-click → "Connect To..." then click the target note, or drag from edge handle dots on card hover |
 | Delete connection | Right-click on a connection line → "Delete Connection" |
 | Pan canvas | Click and drag empty space |
 | Zoom | Mouse scroll wheel, or toolbar +/− buttons |
