@@ -118,6 +118,8 @@
         connIdx: -1
     };
 
+    var connLabelEditState = { active: false, connIdx: -1 };
+
     var dragConnect = {
         active: false,
         sourceId: null,
@@ -547,6 +549,7 @@
 
         hideInput();
         hideHeaderInput();
+        hideConnectionLabelInput();
 
         return loadBoardData(boardId).then(function () {
             render();
@@ -728,7 +731,7 @@
 
     /** Draw a directional arrow from one note to another.
      *  Arrow starts/ends at the edge points of the bounding rectangles. */
-    function drawArrow(fromNote, toNote) {
+    function drawArrow(fromNote, toNote, conn) {
         var fromCx = fromNote.x + fromNote.w / 2;
         var fromCy = fromNote.y + fromNote.h / 2;
         var toCx = toNote.x + toNote.w / 2;
@@ -760,6 +763,20 @@
         ctx.lineTo(end.x - headLen * Math.cos(angle + Math.PI / 7), end.y - headLen * Math.sin(angle + Math.PI / 7));
         ctx.closePath();
         ctx.fill();
+
+        if (conn && conn.label) {
+            var midX = (start.x + end.x) / 2;
+            var midY = (start.y + end.y) / 2;
+            ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.lineJoin = "round";
+            ctx.strokeStyle = colors.background;
+            ctx.lineWidth = 4;
+            ctx.strokeText(conn.label, midX, midY);
+            ctx.fillStyle = colors.arrowFill;
+            ctx.fillText(conn.label, midX, midY);
+        }
 
         ctx.restore();
     }
@@ -1012,7 +1029,7 @@
         for (var ci = 0; ci < connections.length; ci++) {
             var from = findNoteById(connections[ci].from);
             var to = findNoteById(connections[ci].to);
-            if (from && to) drawArrow(from, to);
+            if (from && to) drawArrow(from, to, connections[ci]);
         }
 
         for (var i = 0; i < notes.length; i++) {
@@ -1042,7 +1059,7 @@
             ctx.restore();
         }
 
-        if (hoveredNoteIdx >= 0 && !dragConnect.active && !connectState.active && !editState.active && !headerEditState.active) {
+        if (hoveredNoteIdx >= 0 && !dragConnect.active && !connectState.active && !editState.active && !headerEditState.active && !connLabelEditState.active) {
             drawEdgeHandles(notes[hoveredNoteIdx]);
         }
 
@@ -1314,6 +1331,88 @@
             saveNote(notes[idx]);
         }
         hideHeaderInput();
+        render();
+    }
+
+    function showConnectionLabelInput(connIdx) {
+        hideConnectionLabelInput();
+        var conn = connections[connIdx];
+        if (!conn) return;
+        var fromNote = findNoteById(conn.from);
+        var toNote = findNoteById(conn.to);
+        if (!fromNote || !toNote) return;
+
+        var fromCx = fromNote.x + fromNote.w / 2;
+        var fromCy = fromNote.y + fromNote.h / 2;
+        var toCx = toNote.x + toNote.w / 2;
+        var toCy = toNote.y + toNote.h / 2;
+        var start = getEdgePoint(fromNote, toCx, toCy);
+        var end = getEdgePoint(toNote, fromCx, fromCy);
+        var midX = (start.x + end.x) / 2;
+        var midY = (start.y + end.y) / 2;
+        var sx = midX * zoomLevel + panX;
+        var sy = midY * zoomLevel + panY;
+
+        var input = document.createElement("input");
+        input.type = "text";
+        input.id = "connLabelInput";
+        input.style.position = "fixed";
+        input.style.left = sx + "px";
+        input.style.top = sy + "px";
+        input.style.transform = "translate(-50%, -50%)";
+        input.style.width = (120 * zoomLevel) + "px";
+        input.style.border = "none";
+        input.style.outline = "none";
+        input.style.background = isDarkMode ? "rgba(40,40,60,0.8)" : "rgba(255,255,255,0.6)";
+        input.style.fontFamily = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+        input.style.fontSize = (12 * zoomLevel) + "px";
+        input.style.color = isDarkMode ? "#fff" : "#222";
+        input.style.textAlign = "center";
+        input.style.padding = (2 * zoomLevel) + "px " + (4 * zoomLevel) + "px";
+        input.style.zIndex = "20";
+        input.style.borderRadius = (3 * zoomLevel) + "px";
+        input.value = conn.label || "";
+
+        var idx = connIdx;
+        input.addEventListener("blur", function () {
+            commitConnectionLabelInput(idx);
+        });
+        input.addEventListener("keydown", function (e) {
+            if (e.key === "Escape") {
+                input.blur();
+            }
+            if (e.key === "Enter") {
+                e.preventDefault();
+                input.blur();
+            }
+        });
+
+        document.body.appendChild(input);
+        input.focus();
+        input.select();
+        connLabelEditState.active = true;
+        connLabelEditState.connIdx = idx;
+    }
+
+    function hideConnectionLabelInput() {
+        var el = document.getElementById("connLabelInput");
+        if (el) el.remove();
+        connLabelEditState.active = false;
+        connLabelEditState.connIdx = -1;
+    }
+
+    function commitConnectionLabelInput(idx) {
+        var el = document.getElementById("connLabelInput");
+        if (el && connections[idx]) {
+            var val = el.value.trim();
+            if (val) {
+                connections[idx].label = val;
+            } else {
+                delete connections[idx].label;
+            }
+            saveConnection(connections[idx]);
+        }
+        hideConnectionLabelInput();
         render();
     }
 
@@ -2034,6 +2133,11 @@
                 render();
             }
 
+            if (connLabelEditState.active) {
+                hideConnectionLabelInput();
+                render();
+            }
+
             var pos = getMousePos(e);
             var idx = hitTest(pos.x, pos.y);
 
@@ -2214,7 +2318,12 @@
             if (idx >= 0) {
                 showInput(idx);
             } else {
-                addNoteAt(pos.x, pos.y);
+                var connIdx = hitTestConnection(pos.x, pos.y);
+                if (connIdx >= 0) {
+                    showConnectionLabelInput(connIdx);
+                } else {
+                    addNoteAt(pos.x, pos.y);
+                }
             }
         });
 
@@ -2355,6 +2464,10 @@
             var item = e.target.closest(".context-menu-item");
             if (!item) return;
             var action = item.getAttribute("data-action");
+
+            if (action === "edit-label" && connectionMenuState.connIdx >= 0) {
+                showConnectionLabelInput(connectionMenuState.connIdx);
+            }
 
             if (action === "delete-connection" && connectionMenuState.connIdx >= 0) {
                 var conn = connections[connectionMenuState.connIdx];
